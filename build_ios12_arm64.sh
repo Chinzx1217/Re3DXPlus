@@ -60,7 +60,7 @@ if [ ! -x .venv/bin/python ]; then "$PYTHON" -m venv .venv; fi
 python -m pip install --disable-pip-version-check capstone unicorn pillow numpy
 if ! command -v c++filt >/dev/null 2>&1 && command -v brew >/dev/null 2>&1; then
   BINUTILS="$(brew --prefix binutils 2>/dev/null || true)"
-  [ -x "$BINUTILS/bin/c++filt" ] && PATH="$BINUTILS/bin:$PATH" && export PATH
+  if [ -x "$BINUTILS/bin/c++filt" ]; then PATH="$BINUTILS/bin:$PATH"; export PATH; fi
 fi
 command -v c++filt >/dev/null 2>&1 || {
   echo "c++filt not found. Install GNU binutils (for example: brew install binutils)." >&2; exit 1;
