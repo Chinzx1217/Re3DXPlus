@@ -4,7 +4,7 @@
 set -eu
 cd "$(dirname "$0")"
 ROOT="$(pwd)"
-ORIG="${1:-$ROOT/../Wangan Midnight Maximum Tune 3DX+ (Japan)}"
+ORIG="$ROOT/../Wangan Midnight Maximum Tune 3DX+ (Japan)"
 ORIG="$(cd "$ORIG" 2>/dev/null && pwd)" || {
   echo "Original game folder not found: $ORIG" >&2
   echo "Place 'Wangan Midnight Maximum Tune 3DX+ (Japan)' beside Re3DXPlus." >&2
