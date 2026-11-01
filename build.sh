@@ -7,18 +7,28 @@
 #        the player's files then go to the app's Documents, see main.m SaveDir).
 set -e
 cd "$(dirname "$0")"
-SDK="$HOME/theos/sdks/iPhoneOS9.3-armv7.sdk"
+ARCH="${IOS_ARCH:-armv7}"
+MIN_IOS="${IOS_MIN_VERSION:-6.0}"
+SDK="${IOS_SDK:-$HOME/theos/sdks/iPhoneOS9.3-armv7.sdk}"
+CLANG="${IOS_CLANG:-clang}"
 APP=build/WMMT.app
+PHYS_OBJ="build/obj/phys_rc_${ARCH}.o"
+command -v "$CLANG" >/dev/null 2>&1 || { echo "clang not found: $CLANG" >&2; exit 1; }
+[ -d "$SDK" ] || { echo "iOS SDK not found: $SDK (set IOS_SDK to your iPhoneOS SDK folder)" >&2; exit 1; }
+command -v ldid >/dev/null 2>&1 || { echo "ldid not found; install ldid before building the IPA" >&2; exit 1; }
 rm -rf "$APP" && mkdir -p "$APP" build/obj
-CC="xcrun --sdk iphoneos clang -arch armv7 -miphoneos-version-min=6.0 -isysroot $SDK"
+# Keep separate physics objects for armv7 and arm64; never link an object from another architecture.
+compile() {
+  "$CLANG" -arch "$ARCH" -miphoneos-version-min="$MIN_IOS" -isysroot "$SDK" "$@"
+}
 # the recompiled arcade physics (2.8 MB of generated C) only rebuilds when it changes
-if [ ! -f build/obj/phys_rc.o ] || [ src/phys/phys_rc.c -nt build/obj/phys_rc.o ]; then
+if [ ! -f "$PHYS_OBJ" ] || [ src/phys/phys_rc.c -nt "$PHYS_OBJ" ]; then
   echo "compiling the arcade physics (takes a minute)..."
-  $CC -O2 -ffp-contract=off -DRC_FPT=double -w -c src/phys/phys_rc.c -o build/obj/phys_rc.o
+  compile -O2 -ffp-contract=off -DRC_FPT=double -w -c src/phys/phys_rc.c -o "$PHYS_OBJ"
 fi
-$CC -O2 -std=gnu99 -Wall -Wno-unused-function -DRC_FPT=double \
+compile -O2 -std=gnu99 -Wall -Wno-unused-function -DRC_FPT=double \
   src/main.m src/sound_ios.m src/app.c src/render.c src/hud.c src/car.c src/sound.c src/anm.c src/menu.c src/lights.c src/spark.c src/net.c src/vs_host.c src/title.c src/gk_ios.m \
-  src/phys/rc_runtime.c build/obj/phys_rc.o -o "$APP/WMMT" \
+  src/phys/rc_runtime.c "$PHYS_OBJ" -o "$APP/WMMT" \
   -framework UIKit -framework Foundation -framework OpenGLES -framework QuartzCore \
   -framework AVFoundation -framework AudioToolbox -framework CoreMedia -framework CoreMotion -framework GameKit -lz
 cat > "$APP/Info.plist" <<'PL'
@@ -50,6 +60,7 @@ if [ -n "$PHONE" ]; then
   plutil -replace UIDeviceFamily -json '[1]' "$APP/Info.plist"
   plutil -replace CFBundleIconFiles -json '["Icon.png","Icon@2x.png","Icon-Small.png","Icon-Small@2x.png"]' "$APP/Info.plist"
 fi
+plutil -replace MinimumOSVersion -string "$MIN_IOS" "$APP/Info.plist"
 plutil -convert binary1 "$APP/Info.plist"
 # the springboard icons, pre-rendered with iOS 6's rounded corners and shine (tools/make_icon.py)
 [ -f data/icon/Icon-72.png ] || python3 tools/make_icon.py
