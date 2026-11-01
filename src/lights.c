@@ -35,7 +35,7 @@ static const int BUILDING_BLINK[5] = { 120, 120, 0, 0, 0 };
 /* clPrimitive::setup's draw distances: lights further ahead than this are left out */
 #define STREET_RANGE 1500.0f
 #define BUILDING_RANGE 5000.0f
-enum { TEX_LAMP, TEX_TUBE, TEX_BUILDING, TEX_BRIDGE, TEX_GOAL, TEX_TEN_LINE, TEX_SPOT, TEX_SPARK };
+enum { TEX_LAMP, TEX_TUBE, TEX_BUILDING, TEX_BRIDGE, TEX_GOAL, TEX_TEN_LINE, TEX_SPOT, TEX_SPARK, TEX_TRACK = TEX_SPARK + 2, TEX_BACKFIRE };
 
 /* clGoalLine::clLine::update (0x89778f0): up to 20 lights in a row across the road, from 6
  * units in from one road-edge point to 6 in from the other, (int)((length - 2) * 0.05) + 1 of
@@ -339,6 +339,12 @@ void lights_draw_neon(const mat4 *proj, const mat4 *view, const float *frame, in
   }
   render_sprites(proj, q, 1, L.neon.textures[neon - 1], rp);
 }
+
+uint32_t lights_backfire_texture(int k) {
+  return k >= 0 && L.sprites.n_tex > TEX_BACKFIRE + k ? L.sprites.textures[TEX_BACKFIRE + k] : 0;
+}
+
+uint32_t lights_track_texture(void) { return L.sprites.n_tex > TEX_TRACK ? L.sprites.textures[TEX_TRACK] : 0; }
 
 uint32_t lights_spark_texture(int k) {
   return k >= 0 && k < 2 && L.sprites.n_tex > TEX_SPARK + k ? L.sprites.textures[TEX_SPARK + k] : 0;

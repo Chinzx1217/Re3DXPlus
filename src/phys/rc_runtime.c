@@ -54,11 +54,14 @@ const char *rc_config_dir;
 static int rc_space_c(char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f'; }
 static FILE *rc_files[4];
 
+char rc_last_path[128];
+
 uint32_t rc_fopen(uint32_t path) {
   /* data/carconfig (the loaders) and data/rtmovie (the realtime movies), under rc_config_dir */
-  static const char *const prefix[] = { "data/carconfig/", "data/rtmovie/" };
+  static const char *const prefix[] = { "data/carconfig/", "data/rtmovie/", "data/cutin/" };
   const char *p = (const char *)VA(path), *rest = NULL;
-  for (int k = 0; k < 2 && !rest; ++k) {
+  snprintf(rc_last_path, sizeof rc_last_path, "%s", p);
+  for (int k = 0; k < 3 && !rest; ++k) {
     int i = 0;
     while (prefix[k][i] && p[i] == prefix[k][i]) i++;
     if (!prefix[k][i]) rest = p + 5; /* past "data/" */
@@ -137,12 +140,56 @@ uint32_t rc_fscanf(uint32_t f, uint32_t fmt, uint32_t args) {
   return n;
 }
 
+static size_t rc_format(char *out, uint32_t fmt, uint32_t args);
+
 uint32_t rc_sprintf(uint32_t buf, uint32_t fmt, uint32_t args) {
+  char out[1024];
+  size_t o = rc_format(out, fmt, args);
+  memcpy(VA(buf), out, o + 1);
+  return (uint32_t)o;
+}
+
+/* yt::SCarryover's file (/tmp/ytCarryover.txt: CSeq::End saves what a story race hands the next
+ * one, CSeq::Init loads it for a series that carries over), kept in memory as handle 5 */
+#define RC_CARRY 5u
+static char rc_carry[4096];
+static size_t rc_carry_len, rc_carry_at;
+static int rc_carry_open;
+
+static int rc_is_carry(const char *p) {
+  const char *c = "/tmp/ytCarryover.txt";
+  while (*c && *p == *c) p++, c++;
+  return !*c && !*p;
+}
+
+uint32_t rc_fopen_mode(uint32_t path, uint32_t mode) {
+  if (rc_is_carry((const char *)VA(path))) {
+    const char *m = (const char *)VA(mode);
+    if (m[0] == 'w') rc_carry_len = 0;
+    else if (!rc_carry_len) return 0; /* (none saved yet: as a missing file) */
+    rc_carry_at = 0;
+    rc_carry_open = 1;
+    return RC_CARRY;
+  }
+  return rc_fopen(path);
+}
+
+uint32_t rc_fprintf(uint32_t f, uint32_t fmt, uint32_t args) {
+  if (f != RC_CARRY || !rc_carry_open) return 0;
+  char out[1024];
+  size_t o = rc_format(out, fmt, args);
+  if (rc_carry_len + o < sizeof rc_carry) memcpy(rc_carry + rc_carry_len, out, o), rc_carry_len += o;
+  return (uint32_t)o;
+}
+
+void rc_carry_clear(void) { rc_carry_len = 0; }
+
+static size_t rc_format(char *out, uint32_t fmt, uint32_t args) {
   /* the movies' file names: %d (with flags and width), %s, %f */
   const char *q = (const char *)VA(fmt);
-  char out[1024], spec[16];
+  char spec[16];
   size_t o = 0;
-  while (*q && o < sizeof out - 64) {
+  while (*q && o < 1024 - 64) {
     if (*q != '%') {
       out[o++] = *q++;
       continue;
@@ -155,34 +202,49 @@ uint32_t rc_sprintf(uint32_t buf, uint32_t fmt, uint32_t args) {
     spec[k++] = conv;
     spec[k] = 0;
     if (conv == 'd' || conv == 'i' || conv == 'x' || conv == 'u' || conv == 'c') {
-      o += (size_t)snprintf(out + o, sizeof out - o, spec, (int)M32(args));
+      o += (size_t)snprintf(out + o, 1024 - o, spec, (int)M32(args));
       args += 4;
     } else if (conv == 's') {
-      o += (size_t)snprintf(out + o, sizeof out - o, spec, (const char *)VA(M32(args)));
+      o += (size_t)snprintf(out + o, 1024 - o, spec, (const char *)VA(M32(args)));
       args += 4;
     } else if (conv == 'f') {
       double v;
       memcpy(&v, VA(args), 8);
-      o += (size_t)snprintf(out + o, sizeof out - o, spec, v);
+      o += (size_t)snprintf(out + o, 1024 - o, spec, v);
       args += 8;
     } else if (conv == '%') {
       out[o++] = '%';
     } else {
       rc_fail("sprintf conversion");
     }
-    if (o > sizeof out - 64) o = sizeof out - 64;
+    if (o > 1024 - 64) o = 1024 - 64;
   }
   out[o] = 0;
-  memcpy(VA(buf), out, o + 1);
-  return (uint32_t)o;
+  return o;
 }
 
 uint32_t rc_fgets(uint32_t buf, uint32_t n, uint32_t f) {
+  if (f == RC_CARRY) {
+    char *d = (char *)VA(buf);
+    uint32_t k = 0;
+    if (!rc_carry_open || rc_carry_at >= rc_carry_len || n < 2) return 0;
+    while (k + 1 < n && rc_carry_at < rc_carry_len) {
+      char c = rc_carry[rc_carry_at++];
+      d[k++] = c;
+      if (c == '\n') break;
+    }
+    d[k] = 0;
+    return buf;
+  }
   if (f < 1 || f > 4 || !rc_files[f - 1]) return 0;
   return fgets((char *)VA(buf), (int)n, rc_files[f - 1]) ? buf : 0;
 }
 
 void rc_fclose(uint32_t f) {
+  if (f == RC_CARRY) {
+    rc_carry_open = 0;
+    return;
+  }
   if (f < 1 || f > 4 || !rc_files[f - 1]) return;
   fclose(rc_files[f - 1]);
   rc_files[f - 1] = NULL;
@@ -263,6 +325,51 @@ uint32_t rc_wcompare(uint32_t str, uint32_t s) {
     if (a != b) return a < b ? (uint32_t)-1 : 1u;
   }
   return (uint32_t)((int32_t)n - (int32_t)on);
+}
+
+int rc_cutin_mode;
+uint32_t rc_cutin_lines;
+void (*rc_on_cutin_speak)(uint32_t pos, uint32_t tag, int flash, int x);
+void (*rc_on_cutin_end)(uint32_t pos);
+
+uint32_t rc_string(uint32_t s, uint32_t n, uint32_t size) {
+  uint32_t rep = rc_alloc(12 + (n + 1) * size);
+  W32(rep, n);
+  W32(rep + 4, n);
+  W32(rep + 8, 0);
+  if (n) memcpy(VA(rep + 12), VA(s), n * size);
+  return rep + 12;
+}
+
+uint32_t rc_utf8_line(void) {
+  uint32_t c = ++rc_cutin_lines;
+  uint32_t rep = rc_alloc(12 + 8);
+  W32(rep, 1);
+  W32(rep + 4, 1);
+  W32(rep + 12, c);
+  return rep + 12;
+}
+
+uint32_t rc_wcslen(uint32_t s) {
+  uint32_t n = 0;
+  while (M32(s + 4 * n)) n++;
+  return n;
+}
+
+uint32_t rc_strtol(uint32_t s, uint32_t end, uint32_t base) {
+  const char *p = (const char *)VA(s);
+  char *e;
+  long v = strtol(p, &e, (int)base);
+  if (end) W32(end, s + (uint32_t)(e - p));
+  return (uint32_t)v;
+}
+
+double rc_strtod(uint32_t s, uint32_t end) {
+  const char *p = (const char *)VA(s);
+  char *e;
+  double v = strtod(p, &e);
+  if (end) W32(end, s + (uint32_t)(e - p));
+  return v;
 }
 
 uint32_t rc_rand(void) {

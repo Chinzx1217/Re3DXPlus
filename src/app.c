@@ -307,6 +307,7 @@ static struct {
    * STORYRACE_FADE: clRaceThread::run's setFade(0, 1, 1/3)) over its movie, and that fade */
   int period_in, period_fade;
   car_spec race_spec;
+  int race_traffic; /* the time attack race has the traffic on (no records kept) */
   car_rival race_rv[CAR_RIVALS];
   int race_nrv, race_course;
   wpk_scene *movie_model[CAR_RIVALS];
@@ -689,7 +690,8 @@ static void records_show(int course) {
 /* A run reached the goal: clTaResult's figures (the records as they stand after it), and a
  * new best kept. The course's record is the player's best, as on the console; the run's
  * place counts the ranking's fresh top ten (all 9'59"999, menu.c) too. */
-static void records_goal(int course, const car_race *race, menu_result *res) {
+/* (keep 0: the result as it compares, nothing kept: a run with the traffic on) */
+static void records_goal(int course, const car_race *race, menu_result *res, int keep) {
   int ms = (int)(race->total * 1000.0f); /* as nsTaData::setTime7 shows it */
   if (ms <= 0) ms = 1;
   int best = G.best_ms[course];
@@ -711,6 +713,12 @@ static void records_goal(int course, const car_race *race, menu_result *res) {
   res->top_speed = (int)G.top_kmh;
   /* its place: behind the player's best if that is faster, behind the default ten past 9'59"999 */
   res->rank = 1 + (best && best < ms) + (ms > RANKING_TOP_MS ? 10 : 0);
+  if (!keep) {
+    res->new_course = res->new_car = res->new_personal = 0;
+    res->course_record = res->personal = best ? ((float)best + 0.5f) * 0.001f : 0.0f;
+    res->car_record = car ? ((float)car + 0.5f) * 0.001f : 0.0f;
+    return;
+  }
   if (res->new_personal) G.best_ms[course] = ms;
   if (res->new_car) {
     if (k == G.n_car_best && k < CAR_BEST_MAX) {
@@ -882,12 +890,16 @@ static int options_load(void) {
       G.menu.key_dx[g] = lay[g * 3 + 1] < -2000 || lay[g * 3 + 1] > 2000 ? 0 : lay[g * 3 + 1];
       G.menu.key_dy[g] = lay[g * 3 + 2] < -2000 || lay[g * 3 + 2] > 2000 ? 0 : lay[g * 3 + 2];
     }
+  /* the testers' story switch (menu.h story_test), a third line */
+  int test = 0, traffic = 0;
+  if (n >= 3 && fscanf(f, " test %d", &test) == 1) G.menu.story_test = test >= 0 && test <= 10 ? test : 0;
+  if (n >= 3 && fscanf(f, " traffic %d", &traffic) == 1) G.menu.ta_traffic = traffic != 0;
   fclose(f);
   if (n < 3) return 0;
   G.menu.hires = hires != 0;
   G.menu.hd_tex = hq[0] != 0, G.menu.bloom_on = hq[1] != 0, G.menu.ssao_on = hq[2] != 0;
   G.menu.wet_on = hq[3] != 0, G.menu.paint_on = hq[4] != 0, G.menu.aa4 = hq[5] != 0;
-  G.menu.gyro = a != 0;
+  G.menu.gyro = a >= 0 && a < HUD_STEER_MODES ? a : 0; /* (the steering: hud.h HUD_STEER_*) */
   G.menu.gyro_sens = b >= 1 && b <= 10 ? b : 5;
   G.menu.over_on = c != 0;
   G.menu.sharp_on = d != 0;
@@ -898,12 +910,14 @@ static int options_load(void) {
 }
 
 static void options_save(void) {
-  static int last[23] = { -1 };
-  int now[23] = { G.menu.gyro, G.menu.gyro_sens, G.menu.over_on, G.menu.sharp_on, G.menu.pedal_slide, G.menu.ao_on,
+  static int last[25] = { -1 };
+  int now[25] = { G.menu.gyro, G.menu.gyro_sens, G.menu.over_on, G.menu.sharp_on, G.menu.pedal_slide, G.menu.ao_on,
                   G.menu.bm_on, G.menu.hd_tex, G.menu.bloom_on, G.menu.ssao_on, G.menu.wet_on, G.menu.paint_on,
                   G.menu.aa4, G.menu.hires };
   for (int g = 0; g < 3; ++g)
     now[14 + g * 3] = G.menu.key_k[g], now[15 + g * 3] = G.menu.key_dx[g], now[16 + g * 3] = G.menu.key_dy[g];
+  now[23] = G.menu.story_test;
+  now[24] = G.menu.ta_traffic;
   if (G.options_global && !memcmp(now, last, sizeof now)) return;
   char path[1100];
   snprintf(path, sizeof path, "%s/option", G.save_dir);
@@ -913,6 +927,8 @@ static void options_save(void) {
           now[7], now[8], now[9], now[10], now[11], now[12], now[13]);
   fprintf(f, "keys %d %d %d %d %d %d %d %d %d\n", now[14], now[15], now[16], now[17], now[18], now[19], now[20], now[21],
           now[22]);
+  fprintf(f, "test %d\n", now[23]);
+  fprintf(f, "traffic %d\n", now[24]);
   fclose(f);
   memcpy(last, now, sizeof last);
   G.options_global = 1;
@@ -939,7 +955,7 @@ static void garage_load(void) {
     name_read(line, G.menu.name);
     int c2, d2 = 1;
     if (!G.options_global && sscanf(line, "option %d %d %d %d", &a, &b, &c2, &d2) >= 3) {
-      G.menu.gyro = a != 0;
+      G.menu.gyro = a >= 0 && a < HUD_STEER_MODES ? a : 0;
       G.menu.gyro_sens = b >= 1 && b <= 10 ? b : 5;
       G.menu.over_on = c2 != 0;
       G.menu.sharp_on = d2 != 0;
@@ -1429,12 +1445,15 @@ void app_touch(void *id, int phase, float x, float y) {
 }
 
 void app_tilt(float radians) { G.tilt = radians; }
-int app_wants_tilt(void) { return G.menu.gyro; }
+int app_wants_tilt(void) { return G.menu.gyro == HUD_STEER_GYRO; }
 
 /* the OPTION screen's steering for the race's keys: the tilt for a full lock, 50 degrees at
  * sensitivity 1 down to 15 at 10 */
 static void hud_options(void) {
-  G.hud.gyro = G.menu.gyro;
+  /* (menu.gyro holds the steering: keys, tilt, wheel or stick) */
+  if (G.hud.steer_mode != G.menu.gyro) G.hud.steer_touch = 0, G.hud.steer_v = G.hud.wheel_turn = 0;
+  G.hud.steer_mode = G.menu.gyro;
+  G.hud.gyro = G.menu.gyro == HUD_STEER_GYRO;
   G.hud.slide = G.menu.pedal_slide;
   G.hud.tilt = G.tilt;
   G.hud.full = (50.0f - (float)(G.menu.gyro_sens - 1) * (35.0f / 9.0f)) * 0.0174533f;
@@ -2576,6 +2595,20 @@ static void mini_draw(void *ctx, float fade) {
 #define MOVIE_FADE 20 /* clRaceThread::race's setFade: 1/3 s */
 /* a getFade's colour (clFader::draw: 1 atract_p_black, 2 Full_white) as hud_fade's grey */
 static float fade_grey(int fade) { return fade == 2 ? 1.0f : 0.0f; }
+static void story_cut_start(void);
+
+/* the cars' sparks and tyre marks for a new race (the marks' tread: about the arcade's tyres') */
+#define TYRE_TREAD 2.2f
+static void effects_reset(void) {
+  spark_reset();
+  for (int k = 0; k < SPARK_CARS; ++k) spark_tyre(k, G.car.tyre_radius[k], TYRE_TREAD);
+  /* the backfire's exhausts: the player's car as it is dressed, the rivals' by their pack (a
+   * versus' other cars in their own aero) */
+  spark_backfire_car(0, G.race_pack, G.menu.aero[G.menu.maker][G.menu.car]);
+  for (int i = 0; i < CAR_RIVALS; ++i)
+    spark_backfire_car(1 + i, i < G.n_rival ? G.rival_pack[i] : -1, G.vs_race ? G.rival_dress[i].aero : 0);
+}
+
 static void movie_open(int select, int race, const int *rows, int n_rows) {
   const storymovie *mv = NULL;
   for (int i = 0; i < STORYMOVIE_N && !mv; ++i)
@@ -2598,12 +2631,15 @@ static void movie_open(int select, int race, const int *rows, int n_rows) {
       break;
     }
   }
+  car_cutin_stop();
+  hud_story_cut_file(NULL);
   float len = car_movie_start(&G.car, mv->movie, &G.race_spec, cars, CAR_RIVALS);
   fprintf(stderr, "story movie %d (select %d race %d): %.0f frames\n", mv->movie, select, race, len);
   if (len <= 1.0f) { /* its trails missing: the race at once */
     car_set_rivals(G.race_rv, G.race_nrv);
     car_start(&G.car, G.race_course, G.menu.manual, &G.race_spec);
-    spark_reset();
+    story_cut_start();
+    effects_reset();
     return;
   }
   G.movie_len = len;
@@ -2614,6 +2650,26 @@ static void movie_open(int select, int race, const int *rows, int n_rows) {
   hud_demo_start(mv->demo);
 }
 
+/* the story's in-race lines (clRaceThread::initStory: Cut::clCutIn::Init with the episode in its
+ * loop and the loop) for the race car_start just set up; off in the rest */
+static void story_cut_hud_speak(int pos, int row, int anim, int flash_anim, int flash, int x) {
+  hud_story_cut_speak(pos, row, anim, flash_anim, flash, x);
+}
+static void story_cut_start(void) {
+  static const car_cutin_cb cb = { story_cut_hud_speak, hud_story_cut_end };
+  const char *file = NULL;
+  int sel = G.menu.story_sel;
+  if (sel >= 0 && G.menu.game == MENU_GAME_STORY && !G.n_ten && !G.vs_race && G.menu.ending != 2) {
+    /* (the tuner's story 100..110 in the later loops is the loop's first ten: get_story_index) */
+    int n = sel >= 100 ? (sel - 100 > 9 ? 9 : sel - 100) : sel;
+    file = car_cutin_start(n, menu_story_loop(&G.menu), &cb);
+  } else {
+    car_cutin_stop();
+  }
+  hud_story_cut_file(file);
+  if (file) fprintf(stderr, "story lines: %s\n", file);
+}
+
 /* the movie's end: the race from its start, out of the movie's fade */
 static void movie_close(void) {
   car_movie_end();
@@ -2621,7 +2677,8 @@ static void movie_close(void) {
   G.movie_len = 0;
   car_set_rivals(G.race_rv, G.race_nrv);
   if (car_start(&G.car, G.race_course, G.menu.manual, &G.race_spec) != 0) fprintf(stderr, "race after the movie failed to start\n");
-  spark_reset();
+  story_cut_start();
+  effects_reset();
   G.movie_in = G.movie_fade ? MOVIE_FADE : 0;
   G.race_frames = 0;
   G.time_shown = (int)G.car.race.time_left;
@@ -2639,7 +2696,12 @@ static void movie_close(void) {
 #define VS_PROFILE_CAR 5
 #define VS_PROFILE_NAME 10
 #define VS_PROFILE_DRESS 12
-#define VS_PROFILE 19
+/* then the build's mark ('W' and VS_BUILD): players on another build (their race code, the
+ * physics and its effects can differ) are marked VERSION MISMATCH and hold the start (Allan
+ * 10-31: out of sync); a build from before sends none */
+#define VS_PROFILE_BUILD 19
+#define VS_BUILD 168
+#define VS_PROFILE 21
 enum { VS_GK_OFF, VS_GK_BROWSE, VS_GK_JOIN, VS_GK_HOST };
 #define VS_SILENT 3.0 /* seconds without the server before the screen says so */
 #define VS_GONE 10.0  /* seconds without it in a race on: the host is gone */
@@ -2663,6 +2725,11 @@ static void vs_profile(unsigned char *p) {
   d[0] = (unsigned char)G.menu.aero[mk][c], d[1] = (unsigned char)G.menu.mirror[mk][c];
   d[2] = (unsigned char)G.menu.wing[mk][c], d[3] = (unsigned char)G.menu.bonnet[mk][c];
   d[4] = G.menu.wheel[mk][c], d[5] = (unsigned char)G.menu.neon[mk][c], d[6] = G.menu.vinyl[mk][c];
+  p[VS_PROFILE_BUILD] = 'W', p[VS_PROFILE_BUILD + 1] = VS_BUILD;
+}
+
+static int vs_same_build(const net_player *pl) {
+  return pl->profile_len >= VS_PROFILE && pl->profile[VS_PROFILE_BUILD] == 'W' && pl->profile[VS_PROFILE_BUILD + 1] == VS_BUILD;
 }
 
 /* a player's dress-up from its profile (an older build's, or none sent: stock) */
@@ -3017,6 +3084,8 @@ static void vs_menu(void) {
       const cardb_color *col = vs_color(pl);
       const cardb_car *car = col ? &CARDB_CARS[pl->profile[0]][pl->profile[1]] : NULL;
       vs_ascii(m->vs.car[i], sizeof m->vs.car[i], car ? car->label : "?");
+      m->vs.mismatch[i] = i != l->me && !vs_same_build(pl);
+      if (m->vs.mismatch[i]) vs_ascii(m->vs.car[i], sizeof m->vs.car[i], "VERSION MISMATCH, UPDATE");
       m->vs.racing[i] = pl->status == 1 || pl->status == MENU_VS_LOADED;
       /* the area vote's (menu_vs_status) */
       int st = pl->status;
@@ -3498,14 +3567,24 @@ static void menu_frame(float dt, double frame_start) {
       G.n_rival++;
     }
     load_sync(NULL);
+    /* the time attack's traffic (the course select's TRAFFIC key) */
+    G.race_traffic = !ten && !vs && G.menu.game == MENU_GAME_TA && G.menu.ta_traffic;
+    car_set_ta_traffic(G.race_traffic);
+    /* clRaceThread::finiStory's CSeq::End for the episode's race before this one (the sim still
+     * holds it): a race suspended at the episode's distance saves its carry-over, which this one
+     * starts from (the odometer, time, places and rivals: the B series, ytConfigStory's
+     * Suspend_Carryover true). Without it episode 35's second race ran its whole 25 km from
+     * Daikoku and met a junction its route never reaches (5.3 km to go: stuck; Allan 10-31) */
+    if (!ten && !vs && G.menu.game == MENU_GAME_STORY) car_story_end(G.story_race == 0);
     car_set_rivals(rv, ten || vs ? 0 : G.n_rival);
     if (car_start(&G.car, course, G.menu.manual, &spec) != 0) {
       fprintf(stderr, "course %d failed to start\n", G.menu.course);
       if (vs) menu_vs_loading(&G.menu), G.menu.vs.state = MENU_VS_LOBBY;
       else menu_open(&G.menu);
     } else {
-      spark_reset();
+      effects_reset();
       G.vs_race = vs ? G.n_rival : 0;
+      story_cut_start();
       if (vs) G.menu.vs.state = MENU_VS_RACE;
       fprintf(stderr, "race: course %d (%s), %s colour %d, power %d handling %d, %s\n", G.menu.course,
               G.menu.official ? "official machine" : "personal best", CARDB_CARS[G.menu.maker][G.menu.car].label,
@@ -3592,6 +3671,7 @@ static void menu_frame(float dt, double frame_start) {
       }
       records_show(course);
       G.race_pack = col->pack;
+      effects_reset(); /* (again: the car's pack and the versus' dress known now) */
       if (G.story_race == 0) { /* (a select's second race: the card as the first started) */
         title_card_now(&G.title_pre);
         G.title_odo0 = title_odo();
@@ -4026,6 +4106,8 @@ void app_frame(float dt) {
     for (int k = 0; k < CAR_RIVALS; ++k)
       spark_step(1 + k, G.car.rival_body[k], G.car.rival_shown[k] ? &G.car.rival_effect[k] : NULL);
     hud_ten_cutin(&G.car.race, 1);
+    car_cutin_update();
+    hud_story_cut_step();
     /* clRaceThread::race on a 10-in-a-row rival beaten (play state 9, one arcade frame): the
      * picture stands still 60 frames (the graphics on clGraphicFreezeCallback, nothing run),
      * colours inverted (clGraphicFrame +0x174, neg.cg), with cutin2 (SE 0x4c) and the beaten
@@ -4114,6 +4196,7 @@ void app_frame(float dt) {
       menu_finish_story(&G.menu, race->won, next >= 0, race->gap, fade);
       if (next >= 0) {
         G.story_race++;
+        menu_story_song(&G.menu, G.story_race);
       } else {
         G.story_race = 0;
         /* the points first: whether the episode was cleared before counts */
@@ -4155,7 +4238,8 @@ void app_frame(float dt) {
       menu_finish_ten(&G.menu, beaten, race->ten_now, medal);
       menu_dress_win(&G.menu, getenv("WMMT_DRESS_WIN") ? atoi(getenv("WMMT_DRESS_WIN")) : beaten);
     } else {
-      if (goal) records_goal(G.menu.course, race, &res);
+      /* (a run with the traffic on keeps no record: the records are traffic off's) */
+      if (goal) records_goal(G.menu.course, race, &res, !G.race_traffic);
       menu_finish_open(&G.menu, goal, goal ? &res : NULL);
       title_race_over(TITLE_TA, goal, race, G.menu.course, goal && res.rank == 1);
       garage_save();
@@ -4288,13 +4372,18 @@ void app_frame(float dt) {
     if (pass == WPK_CUTOUT) draw_shadows(&vp, &car_m);
     SEG_END(SEG_OPAQUE + pass);
   }
-  /* the headlights' pools on the road (clCarSpotLight), then the street lights' and building
-   * lights' glows, and the rows of lights at the goal and the next checkpoint */
+  /* the cars' tyre marks (clTireTrackManager), then the headlights' pools on the road
+   * (clCarSpotLight), then the street lights' and building lights' glows, and the rows of
+   * lights at the goal and the next checkpoint */
+  if (!movie && !getenv("WMMT_NO_TRACKS")) spark_draw_tracks(&proj, &view, &G.rp);
   {
     const float *spot[1 + CAR_RIVALS];
     int n = 0;
     /* (the roof view too: the player's car is not drawn there, its lamps' pools still are) */
-    if (c->spot) spot[n++] = c->body;
+    /* (clCarEffectManager::update 0x85faa57: in the story the player's own pool shows only in
+     * the odd periods, the races; not in the realtime movies before them, where the stopped
+     * cars' pools lay bands of light out from their doors, Allan 10-30) */
+    if (c->spot && !movie) spot[n++] = c->body;
     for (int i = 0; i < CAR_RIVALS; ++i)
       if (c->rival_shown[i] && c->rival_spot[i] && (movie ? G.movie_model[i] : G.rival_model[i])) spot[n++] = c->rival_body[i];
     if (!getenv("WMMT_NO_SPOT")) lights_draw_spots(&proj, &view, spot, n, G.track_zone == 1, &G.rp);
@@ -4320,7 +4409,7 @@ void app_frame(float dt) {
   lights_draw(&proj, &view, G.track_zone == 1, G.rp.time, &G.rp);
   lights_draw_goal(&proj, &view, &c->race, G.rp.time, &G.rp);
   lights_draw_ten_line(&proj, &view, &c->race, &G.rp);
-  if (!movie && !getenv("WMMT_NO_SPARK")) spark_draw(&proj, &view, &G.rp);
+  if (!movie && !getenv("WMMT_NO_SPARK")) spark_draw(&proj, &view, &G.rp), spark_draw_backfire(&proj, &view, &G.rp);
   render_blend_pass(0);
   SEG_END(SEG_LIGHTS);
   /* the first race frame draws all it can see; after it, whatever the menus left cold that

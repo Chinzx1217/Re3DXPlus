@@ -70,6 +70,8 @@ void snd_ios_bgm(const char *name) {
   bgm_apply();
 }
 
+void snd_ios_bgm_level(float level) { bgm.volume = 0.5f * level; }
+
 void snd_ios_pause(int p) {
   /* the lock screen and the home screen can take the audio session from the app (an
    * interruption), and then RemoteIO and the BGM player came back silent: the session is

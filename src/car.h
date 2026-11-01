@@ -29,7 +29,25 @@ typedef struct {
 typedef struct {
   float spark;
   float at[3], dir[3];
+  /* its tyre marks (clTireTrackManager::update, each arcade frame): each wheel's world matrix
+   * (SInfoCarDisp +0x44, +0x84, +0xc4, +0x104) and how dark its mark is laid (SInfoCarEffect
+   * +0x40 + 4 k, 0 none) */
+  float wheel[4][16], track[4];
+  /* the backfire (clBackFireManager): +0x84 on while it fires, its type by the car's speed
+   * (+0x30, the velocity: int(|v|) % 2, clCarEffectManager::update as the flag comes on) */
+  int backfire;
+  float speed;
 } car_effect;
+
+/* The player's car's sound request as the arcade's physics makes it (yt::CInfoSEMc at CMachine
+ * +0xb88: CSeq::Exec fills it each frame, yt::CSE::Mc_Req 0x89a0678 plays it): the turbo's
+ * turbine loop (+0x1c a turbo, +0x74 its volume, +0x78 its rate in Hz), the wind (+0x7c,
+ * +0x80), the blow-off valve (+0xa8, +0xac), the backfire (+0xb0, +0xb4, +0xb8) and the gear's
+ * clunk gyap (+0xbc, +0xc0, +0xc4); the volumes before nsAudio's 0.73 */
+typedef struct {
+  int turbo, valb, backfire, gyap;
+  float turbin_vol, turbin_hz, air_vol, air_hz, valb_vol, backfire_vol, backfire_hz, gyap_vol, gyap_hz;
+} car_se;
 
 /* The time attack as the arcade's consoles show it: CSeq::Get2DInfoRace and Get2DInfoMap,
  * the checkpoints' yt::CTimeKeeper and the race state (yt::CState). */
@@ -123,6 +141,7 @@ typedef struct {
   float vel[3];
   int vel_ok, sparked;
   int shift_event;  /* +1 up / -1 down since last cleared */
+  car_se se;        /* the arcade's own sound request this frame */
   /* the arcade's camera for this frame (CMachine::GetInfoCarCamera) */
   float cam_view[16]; /* world -> camera, GL column-major */
   float cam_pos[3];
@@ -151,6 +170,7 @@ typedef struct {
    * CMachine's !(+0x3b5), the rivals and the movies' cars always) */
   unsigned char spot, rival_spot[CAR_RIVALS];
   car_effect effect, rival_effect[CAR_RIVALS];
+  float tyre_radius[1 + CAR_RIVALS]; /* the player's, the rivals' (display units; 0 unknown) */
   car_race race;
 } car_state;
 
@@ -217,6 +237,9 @@ typedef struct {
 /* The next car_start races `n` rivals (up to CAR_RIVALS; 0: a time attack alone). The race
  * is the story mode's (EGameMode 4) with the first one's select and race. */
 void car_set_rivals(const car_rival *rivals, int n);
+/* The next car_start's time attack with the traffic on (the arcade's hidden button: SConfigPlay
+ * +0xac); off by default, and in every other mode */
+void car_set_ta_traffic(int on);
 /* The next car_start is a 10-in-a-row race (SConfigPlay mode 7) on the EStage (333..342; 0 off)
  * at the level (0..9, 10 the extend), with its rivals in order (their tyres for CSeq::Exec, which
  * brings each on as the one before is beaten). */
@@ -288,5 +311,23 @@ float car_kmh(const car_state *c);
 float car_movie_start(car_state *c, int movie, const car_spec *player, const car_rival *rivals, int n);
 int car_movie_update(car_state *c, float frame);
 void car_movie_end(void);
+
+/* The story's in-race lines (Cut::clCutIn, recompiled: clRaceThread::initStory's Init after the
+ * race is set up, its Update each frame after CSeq::Exec): car_cutin_start after car_start with
+ * the episode (clEffStoryType::getStorySelectInLoop, 0..99) and the story's loop (0 the first:
+ * the later loops' first ten take CutIn101..110), returning the file it reads (its name, NULL
+ * none); then car_cutin_update after each car_update. Its clCutinDisp calls come back through
+ * the callbacks: speak at place pos (nsCutinDisp::ePos) the file's row (from 0: storycut.h) with
+ * the line's anime and the flash's (the tag's) and the flash on, at x; end the place's line. */
+typedef struct {
+  void (*speak)(int pos, int row, int anim, int flash_anim, int flash, int x);
+  void (*end)(int pos);
+} car_cutin_cb;
+const char *car_cutin_start(int select, int loop, const car_cutin_cb *cb);
+void car_cutin_update(void);
+void car_cutin_stop(void);
+/* A story race over (CSeq::End: its carry-over saved for the episode's next race), or with
+ * first set, an episode started afresh (none carried) */
+void car_story_end(int first);
 
 #endif

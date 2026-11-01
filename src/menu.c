@@ -14,6 +14,7 @@
 #include "hud.h"
 #include "storypre.h"
 #include "storysel.h"
+#include "storybgm.h"
 #include "tendb.h"
 #include "sttune.h"
 #include "steff.h"
@@ -1028,6 +1029,16 @@ static void draw_topbar(int bars, float fade, const anm_swap *mes) {
     anm_draw_sprite(inf, r[0] + INF_DX - INF_W / 2, r[1] + INF_DY - INF_H / 2, fade);
 }
 
+/* The story's races each play their own music (clEffStoryType::getBgm by the BGM sound
+ * source, src/storybgm.h; clSeqStdDayTimeSelectThread sets the BGM line to it): the select's
+ * race's line, the random one kept where it has none (Allan 10-31) */
+static int bgm_set(const menu_state *m);
+void menu_story_song(menu_state *m, int race) {
+  if (m->story_pick < 0 || m->story_pick > 111 || race < 0 || race > 1) return;
+  int line = STORYBGM[m->story_pick][race][bgm_set(m)];
+  if (line > 0) m->song = line;
+}
+
 /* ---- the time zone and BGM select (clSeqStdDayTimeSelectThread, between the course
  * select and the race) ----
  * - menu_layout_yn_card_1_gold: the morning (0) and night (1) cards of a clMenuSpinBoxStd,
@@ -1104,6 +1115,10 @@ const char *menu_bgm(const menu_state *m, int racing) {
   if (m->ending == 2) return racing && m->ending_t >= 150 && m->ending_t < MENU_ENDING_SKIP + 120 ? MUSIC_ENDING : NULL;
   if (racing && m->finish && m->finish_story != 3) return m->finish > m->finish_wait ? MUSIC_RESULT : NULL;
   if (racing || (m->screen == MENU_PRE && m->pre_quiet)) return m->song > 0 ? bgm_file(m, m->song) : NULL;
+  /* the pre-race tune check keeps the music of the screen it came from (Allan 10-31): none after
+   * the time attack's BGM choice (mseqTimeAttack stops it), else the select music on */
+  if (m->screen == MENU_SETTING && m->tune_confirm)
+    return m->tune_confirm == MENU_BGM ? NULL : m->music ? MUSIC_SELECT : MUSIC_ENTRY;
   if (m->screen < MENU_START) return NULL; /* the attract loop: its movies have their own sound */
   /* mseqTimeAttack stops the music once the BGM is chosen (before seqTaCourseDecide) */
   if ((m->screen == MENU_BGM && m->deciding) || m->screen == MENU_PRE) return NULL;
@@ -1379,6 +1394,39 @@ void menu_tune(const menu_state *m, int *power, int *handling) {
   *handling = full ? CAR_TUNE_TOTAL - *power : m->st_handling[m->maker][m->car];
 }
 
+/* DONE in the bottom bar's middle, as the other screens' keys there (hud.c MENU_HIDDEN: 328, 652,
+ * 368 x 56 in the 1024 x 768 layout; Allan 10-29): the card settings' and the tune check's */
+static const float CS_DONE[4] = { 205, 407.5f, 230, 35 };
+
+/* ---- the pre-race tune check: the car setting (its gauges, the balance on the bottom bar's
+ * keys, AT / MT) with DONE in the bottom bar's middle, before a race's title page; its back
+ * key goes back to the screen it came from ---- */
+static void tune_confirm_enter(menu_state *m, int from) {
+  int music = m->music;
+  car_select_enter(m, MENU_SETTING);
+  m->music = music; /* (the music of the screen before goes on: menu_bgm) */
+  m->tune_confirm = from;
+}
+static int tune_confirm_done_hit(const menu_state *m) {
+  const float *d = CS_DONE;
+  return m->tap_x >= d[0] && m->tap_x < d[0] + d[2] && m->tap_y >= d[1] - 6 && m->tap_y < d[1] + d[3] + 6;
+}
+static void draw_tune_confirm(float screen_w, float screen_h) {
+  const float *d = CS_DONE, k16 = 1.6f;
+  hud_ui_begin(screen_w, screen_h);
+  hud_ui_text("TUNE CHECK", 24.0f * k16, 40.0f * k16, 4.0f, 1, 1, 1, 1);
+  hud_ui_button(d[0] * k16, d[1] * k16, d[2] * k16, d[3] * k16, 0);
+  hud_ui_text("DONE", (d[0] + 0.5f * d[2]) * k16 - 0.5f * hud_ui_text_width("DONE", 4.0f), (d[1] + 0.5f * d[3]) * k16 - 14.0f,
+              4.0f, 1, 1, 1, 1);
+  hud_ui_end();
+}
+
+/* a story-tuned car (STOCK chosen) whose earned tune can be split again: 20 steps or more */
+static int st_rebalance_ok(const menu_state *m) {
+  int mk = m->maker, c = m->car;
+  return !m->tune_full[mk][c] && !m->new_card && m->st_power[mk][c] + m->st_handling[mk][c] >= 20;
+}
+
 /* the chips' left edges: STOCK, FULL TUNE, AT, MT */
 static void setting_chips(float x[4]) {
   x[0] = 24.0f;
@@ -1405,9 +1453,6 @@ static const int CS_SPRITE[2][3] = { { S_CS_NORMAL, S_CS_RACING, S_CS_SPECIAL },
 #define CS_ROW1 290.0f
 #define CS_X0 196.0f /* the choices' centres */
 #define CS_DX 150.0f
-/* DONE in the bottom bar's middle, as the other screens' keys there (hud.c MENU_HIDDEN: 328, 652,
- * 368 x 56 in the 1024 x 768 layout; Allan 10-29) */
-static const float CS_DONE[4] = { 205, 407.5f, 230, 35 };
 /* the setting's key to it (640 x 480): in the top bar left of the wheel key (hud.c MENU_OPTION:
  * 628, 46, 84 x 60 in the 1024 x 768 layout), clear of the car (Allan 10-29) */
 static const float SET_CS_KEY[4] = { 242.5f, 28.75f, 145, 37.5f };
@@ -1524,14 +1569,40 @@ static int setting_step(menu_state *m, int tap, int key) {
   int mk = m->maker, c = m->car;
   m->spin -= 0.3f;
   if (key) {
+    if (!m->tune_full[mk][c]) {
+      /* the tune the story earned split again (Allan 10-31: 実戦調教), by clSeqCarSettingThread's
+       * rules (0x877d278): the total kept, each of power and handling at least 10 (so a total
+       * under 20 stays as it is), the wheel left a step more power; the story's next step goes
+       * on top of the split (seqStTune) */
+      int p = m->st_power[mk][c], h = m->st_handling[mk][c], t = p + h, np = p - key;
+      if (!st_rebalance_ok(m) || np < 10 || t - np < 10 || np > CAR_TUNE_MAX || t - np > CAR_TUNE_MAX) return 0;
+      snd_menu(SND_CURSOR);
+      m->st_power[mk][c] = (signed char)np;
+      m->st_handling[mk][c] = (signed char)(t - np);
+      m->garage_changed = 1;
+      return 0;
+    }
     int p = m->tune_power[mk][c] - key;
-    if (!m->tune_full[mk][c] || p < SET_MIN_POWER || p > CAR_TUNE_MAX) return 0;
+    if (p < SET_MIN_POWER || p > CAR_TUNE_MAX) return 0;
     snd_menu(SND_CURSOR);
     m->tune_power[mk][c] = (signed char)p;
     m->garage_changed = 1;
     return 0;
   }
   if (!tap) return 0;
+  if (m->tune_confirm) { /* (the pre-race check: only DONE or the car go on, the mode kept) */
+    if (tune_confirm_done_hit(m) || (m->tap_x >= SET_CAR_X0 && m->tap_x < SET_CAR_X1 && m->tap_y >= SET_CAR_Y0 && m->tap_y < SET_CAR_Y1)) {
+      snd_menu(SND_SELECT);
+      return 1;
+    }
+    float xc[4];
+    setting_chips(xc);
+    if (m->tap_y >= SET_ROW_Y - 16.0f && m->tap_y < SET_ROW_Y + 46.0f && m->tap_x >= xc[2] - SET_CHIP_GAP * 0.5f) {
+      int want = m->tap_x >= xc[3] - SET_CHIP_GAP * 0.5f;
+      if (m->manual != want) snd_menu(SND_CURSOR), m->manual = want, m->garage_changed = 1;
+    }
+    return 0;
+  }
   const float *ck = SET_CS_KEY;
   if (!m->new_card && m->tap_x >= ck[0] && m->tap_x < ck[0] + ck[2] && m->tap_y >= ck[1] - 6 && m->tap_y < ck[1] + ck[3] + 6) {
     snd_menu(SND_SELECT);
@@ -1582,7 +1653,7 @@ static void draw_setting(const menu_state *m, int clock, void (*draw3d)(void *),
   for (int k = 0; k < 4; ++k)
     if (!(k < 2 && m->tune_locked && !lit[k]))
       anm_draw_sprite(anm_sprite(SET_TEXT + k), x[k], SET_ROW_Y, lit[k] ? 1.0f : 0.3f);
-  if (full) anm_draw(ID.set_handle, clock % anm_frames(ID.set_handle), 1);
+  if (full || st_rebalance_ok(m)) anm_draw(ID.set_handle, clock % anm_frames(ID.set_handle), 1);
   /* the gauges */
   anm_draw_sprite(anm_sprite(T_SET_BAND), -192.0f, 246.0f, 0.5f);
   anm_draw_sprite(anm_sprite(T_SET_POWER), 7.0f, 256.0f, 1);
@@ -1645,7 +1716,8 @@ enum {
   O_CONTROLS, O_BUTTONS, O_GYRO, O_STEERING, O_SENS, O_GRAPHICS, O_REFLECTION, O_ON, O_OFF, O_TILT, O_TITLE,
   O_SHARP, O_HIDDEN /* the maker select's hidden cars key */, O_PEDALS, O_AO, O_BM,
   O_ALL_ON, O_ALL_OFF /* the colour select's ALL PARTS key */,
-  O_HD, O_BLOOM, O_SSAO, O_WET, O_PAINT, O_AA, O_4X, O_2X /* Android's GRAPHICS rows */, O_N
+  O_HD, O_BLOOM, O_SSAO, O_WET, O_PAINT, O_AA, O_4X, O_2X /* Android's GRAPHICS rows */,
+  O_TEST /* the testers' switch's note: off, then the ten divisions */ , O_N = O_TEST + 11
 };
 #define OPT_CHIP_X 300.0f
 #define OPT_STEER_Y 152.0f /* the rows' middles */
@@ -1665,6 +1737,40 @@ enum {
 static void option_chips(int first, float x[2]) {
   x[0] = OPT_CHIP_X;
   x[1] = x[0] + anm_sprite_width(anm_sprite(OPT_TEXT + first)) + SET_CHIP_GAP;
+}
+
+/* the steering's two chips after BUTTONS and GYRO (the HUD's letters): WHEEL, STICK; their
+ * left edges and widths (640 x 480) */
+#define OPT_STEER_PX 2.5f
+#define OPT_STEER_GAP 14.0f
+static const char *const OPT_STEER_TEXT[2] = { "WHEEL", "STICK" };
+static void option_steer_chips(float x[2], float w[2]) {
+  float c[2];
+  option_chips(O_BUTTONS, c);
+  float at = c[1] + anm_sprite_width(anm_sprite(OPT_TEXT + O_BUTTONS + 1)) + OPT_STEER_GAP;
+  for (int k = 0; k < 2; ++k) {
+    w[k] = hud_ui_text_width(OPT_STEER_TEXT[k], OPT_STEER_PX) / 1.6f;
+    x[k] = at;
+    at += w[k] + OPT_STEER_GAP;
+  }
+}
+static int option_steer_chip(const menu_state *m) {
+  float x[2], w[2];
+  option_steer_chips(x, w);
+  if (m->tap_y < OPT_STEER_Y - OPT_ROW_HALF || m->tap_y >= OPT_STEER_Y + OPT_ROW_HALF) return -1;
+  for (int k = 0; k < 2; ++k)
+    if (m->tap_x >= x[k] - OPT_STEER_GAP * 0.5f && m->tap_x < x[k] + w[k] + OPT_STEER_GAP * 0.5f) return HUD_STEER_WHEEL + k;
+  return -1;
+}
+static void draw_option_steer(const menu_state *m, float screen_w, float screen_h) {
+  float x[2], w[2];
+  option_steer_chips(x, w);
+  hud_ui_begin(screen_w, screen_h);
+  for (int k = 0; k < 2; ++k) {
+    float a = m->gyro == HUD_STEER_WHEEL + k ? 1.0f : 0.3f;
+    hud_ui_text(OPT_STEER_TEXT[k], x[k] * 1.6f, (OPT_STEER_Y - 7.0f) * 1.6f, OPT_STEER_PX, 1, 1, 1, a);
+  }
+  hud_ui_end();
 }
 
 /* which of a row's chips a tap is on (-1 none) */
@@ -1795,7 +1901,7 @@ static int layout_button(float x, float y) {
 
 static void layout_clamp(menu_state *m, int g) {
   float dx = (float)m->key_dx[g], dy = (float)m->key_dy[g];
-  hud_layout_clamp(g, m->gyro, (float)m->key_k[g] * 0.01f, &dx, &dy);
+  hud_layout_clamp(g, m->gyro == HUD_STEER_GYRO, (float)m->key_k[g] * 0.01f, &dx, &dy);
   m->key_dx[g] = (int)floorf(dx + 0.5f), m->key_dy[g] = (int)floorf(dy + 0.5f);
 }
 
@@ -1821,7 +1927,7 @@ static int layout_touch(menu_state *m, void *id, int phase, float x, float y) {
       return 1;
     }
     layout_apply(m);
-    int g = hud_layout_hit(m->gyro, x, y);
+    int g = hud_layout_hit(m->gyro == HUD_STEER_GYRO, x, y);
     if (g < 0) return 0;
     m->lay_sel = g;
     m->lay_drag = 1, m->lay_touch = id;
@@ -1910,7 +2016,7 @@ static void draw_option_layout_key(float screen_w, float screen_h) {
 static void option_step(menu_state *m, int tap, int key) {
   if (key) {
     int s = m->gyro_sens + key;
-    if (m->gyro && s >= 1 && s <= 10) option_set(m, &m->gyro_sens, s);
+    if (m->gyro == HUD_STEER_GYRO && s >= 1 && s <= 10) option_set(m, &m->gyro_sens, s);
     return;
   }
   if (!tap) return;
@@ -1921,6 +2027,7 @@ static void option_step(menu_state *m, int tap, int key) {
     return;
   }
   int k = option_chip(m, O_BUTTONS, OPT_STEER_Y);
+  if (k < 0) k = option_steer_chip(m); /* (the wheel's and the stick's) */
   if (k >= 0) option_set(m, &m->gyro, k);
   k = option_chip(m, O_ON, OPT_PEDAL_Y);
   if (k >= 0) option_set(m, &m->pedal_slide, !k);
@@ -1939,7 +2046,7 @@ static void option_step(menu_state *m, int tap, int key) {
   if (k >= 0) option_set(m, &m->bm_on, !k);
   option_res_step(m);
   /* a light of the gauge: that sensitivity */
-  if (m->gyro && m->tap_y >= OPT_SENS_Y - OPT_ROW_HALF && m->tap_y < OPT_SENS_Y + OPT_ROW_HALF) {
+  if (m->gyro == HUD_STEER_GYRO && m->tap_y >= OPT_SENS_Y - OPT_ROW_HALF && m->tap_y < OPT_SENS_Y + OPT_ROW_HALF) {
     int i = (int)floorf((m->tap_x - OPT_CHIP_X) / OPT_LIGHT_DX);
     if (i >= 0 && i < 10) option_set(m, &m->gyro_sens, i + 1);
   }
@@ -1951,6 +2058,7 @@ static void draw_option(const menu_state *m, int clock, int bars) {
   /* CONTROLS */
   anm_draw_sprite(anm_sprite(T_SET_COURSE_BAND), -1.7f, 84.3f, 0.5f);
   anm_draw_sprite(anm_sprite(OPT_TEXT + O_CONTROLS), 24.0f, 101.0f, 1);
+
   anm_draw_sprite(anm_sprite(T_SET_BAND), -192.0f, OPT_STEER_Y - 20.0f, 0.5f);
   float x[2];
   anm_draw_sprite(anm_sprite(OPT_TEXT + O_STEERING), 16.0f, OPT_STEER_Y - 10.0f, 1);
@@ -1958,7 +2066,7 @@ static void draw_option(const menu_state *m, int clock, int bars) {
   for (int k = 0; k < 2; ++k)
     anm_draw_sprite(anm_sprite(OPT_TEXT + O_BUTTONS + k), x[k], OPT_STEER_Y - 15.0f, m->gyro == k ? 1.0f : 0.3f);
   /* the sensitivity: ten lights (the setting's gauge, lit by the s1..s3 colours) and its number */
-  float a = m->gyro ? 1.0f : 0.3f;
+  float a = m->gyro == HUD_STEER_GYRO ? 1.0f : 0.3f;
   anm_draw_sprite(anm_sprite(OPT_TEXT + O_SENS), 16.0f, OPT_SENS_Y - 10.0f, a);
   for (int i = 0; i < 10; ++i) {
     float gx = OPT_CHIP_X + OPT_LIGHT_DX * ((float)i + 0.5f) - 32.0f, gy = OPT_SENS_Y - 32.0f;
@@ -1993,7 +2101,7 @@ static void draw_option(const menu_state *m, int clock, int bars) {
   draw_topbar(bars, 1, &title);
   anm_draw(ID.bottom, bars, 1);
   int hint = anm_sprite(OPT_TEXT + O_TILT);
-  if (!bars && m->gyro)
+  if (!bars && m->gyro == HUD_STEER_GYRO)
     anm_draw_sprite(hint, 320.0f - anm_sprite_width(hint) * 0.5f, 427.0f, 0.75f + 0.25f * cosf((float)clock * 0.1f));
 }
 
@@ -3079,6 +3187,7 @@ void menu_finish_vs(menu_state *m, int place, int n) {
   m->finish_wait = FINISH_GOAL_WAIT;
   m->vs.last_place = place;
   m->vs.last_n = n;
+  for (int id = 2625; id <= 2631; ++id) anm_warm_sprite(anm_sprite(id), 1); /* (menu_finish_draw's places) */
 }
 
 void menu_finish_story(menu_state *m, int won, int next, float gap, int fade) {
@@ -3555,8 +3664,17 @@ void menu_finish_draw(const menu_state *m) {
     if (m->finish_fade) anm_fill(g, g, g, t + 1 >= STORY_FADE ? 1.0f : (float)(t + 1) / STORY_FADE);
   } else if (m->finish_out) anm_fill(0, 0, 0, m->finish_out < RES_OUT_FADE ? (float)m->finish_out / RES_OUT_FADE : 1.0f);
   else if (m->finish_story >= 5) {
-    int a = m->finish_story == 5 ? ID.win : ID.lose, len = m->finish_story == 5 ? anm_frames(a) : ST_LOSE_LEN;
-    anm_draw(a, t < len ? t : len - 1, 1);
+    /* clRaceFinishConsole (update 0x85d23d8): once anyone is home, menu_g_finish_win 90..99 then
+     * 1..59 (held), its 0xa44 the place (0x93cfc34: cons_p_vs_place_1st..4th) and its 0xa47 the
+     * machines in the race (0x93cfc44 by clNet::getJoinCount: s_2..s_4); behind the first, its
+     * clMenuFade darkens the screen to black over a second (setFade 1 -> 0, 60 frames) */
+    static const int PLACE[4] = { 2625, 2626, 2627, 2628 }, OF[5] = { 1, 1, 2629, 2630, 2631 };
+    int place = m->vs.last_place < 1 ? 1 : m->vs.last_place > 4 ? 4 : m->vs.last_place;
+    int n = m->vs.last_n < 0 ? 0 : m->vs.last_n > 4 ? 4 : m->vs.last_n;
+    if (place > 1) anm_fill(0, 0, 0, t + 1 >= 60 ? 1.0f : (float)(t + 1) / 60.0f);
+    int f = t < 10 ? 90 + t : 1 + (t - 10 < 58 ? t - 10 : 58);
+    anm_swap sw[2] = { { anm_sprite(0xa44), anm_sprite(PLACE[place - 1]) }, { anm_sprite(0xa47), anm_sprite(OF[n]) } };
+    anm_draw_ex(ID.win, f, 1, 0, 0, sw, 2);
   } else if (m->finish_story == 1 || m->finish_story == 2) {
     int a = m->finish_story == 1 ? ID.win : ID.lose, len = m->finish_story == 1 ? anm_frames(a) : ST_LOSE_LEN;
     anm_draw(a, t < len ? t : len - 1, 1);
@@ -3764,11 +3882,14 @@ static const int LV_BACKLIGHT[4] = { 0x1dbe, 0x1e69, 0x1ed8, 0x1cdd };
 static const int LV_WAKU[4] = { 0x1327, 0x1649, 0x1881, 0x1044 }; /* menu_p_st_lv_waku_<colour> (0x93fd020) */
 #define ST_NONE 99 /* a tap on nothing */
 
-static int st_loop(const menu_state *m) { return m->st_div / 5; }
-static int st_division(const menu_state *m) { return m->st_div % 5; }
+/* (the testers' switch in place of the save's own division: menu.h story_test) */
+static int st_div_of(const menu_state *m) { return m->story_test > 0 ? m->story_test - 1 : m->st_div; }
+static int st_loop(const menu_state *m) { return st_div_of(m) / 5; }
+static int st_division(const menu_state *m) { return st_div_of(m) % 5; }
 
 /* clV386CardData::isStoryClear (0x86c5524): the divisions before the card's are cleared */
 static int st_cleared(const menu_state *m, int n) {
+  if (m->story_test) return 0;
   int r = n % 100, d = r / 20;
   if (d != st_division(m)) return d < st_division(m);
   return (m->st_bits >> (r % 20)) & 1;
@@ -3790,6 +3911,13 @@ typedef struct { int level[4], ep[4][5], lv, slot; } st_states;
 static void st_states_of(const menu_state *m, st_states *s) {
   int base = 20 * st_division(m), found = 0;
   memset(s, 0, sizeof *s);
+  if (m->story_test) { /* (the testers' switch: every episode of the division open) */
+    for (int lv = 0; lv < 4; ++lv) {
+      s->level[lv] = 1;
+      for (int k = 0; k < 5; ++k) s->ep[lv][k] = 1;
+    }
+    return;
+  }
   if (st_division(m) > 0 && st_loop(m) == 0) {
     for (int lv = 0; lv < 4 && !found; ++lv) {
       s->level[lv] = 1;
@@ -3819,7 +3947,7 @@ static void st_states_of(const menu_state *m, st_states *s) {
 }
 
 void menu_story_clear(menu_state *m, int n) {
-  if (n < 0) return;
+  if (n < 0 || m->story_test) return; /* (a tester's race clears nothing) */
   int r = n % 100;
   if (r / 20 == st_division(m)) m->st_bits |= 1 << (r % 20);
   /* the division's last episode: setStoryClearDivCount(+1), which clears the bits */
@@ -3878,6 +4006,84 @@ static int st_tap(const menu_state *m) {
   }
   if (best < 0) return ST_NONE;
   return best == m->sel ? 0 : best < m->sel ? -1 : 1;
+}
+
+/* ---- UNLOCK ALL CHAPTERS (Allan 10-31: the testers' switch, menu.h story_test, as a key):
+ * in the level select's bottom bar between its arrow keys (640 x 480; the bar's keys at
+ * 22..133 and 507..618), a tap turns it on at the save's own page; on, the key shows the page
+ * (1-20 .. 81-100, the second loop's after) with < and > either side to step through them, a
+ * tap on the page turns it off. Its races change no progress. ---- */
+static const float CH_KEY[4] = { 205, 407.5f, 230, 35 }, CH_PREV[4] = { 143, 407.5f, 52, 35 }, CH_NEXT[4] = { 445, 407.5f, 52, 35 };
+static int ch_hit(const menu_state *m, const float *r) {
+  return m->tap_x >= r[0] && m->tap_x < r[0] + r[2] && m->tap_y >= r[1] - 6 && m->tap_y < r[1] + r[3] + 6;
+}
+static void chapters_page(menu_state *m, int page) {
+  st_states s;
+  m->story_test = page;
+  st_states_of(m, &s);
+  m->sel = s.lv;
+  m->card_t = FADE;
+}
+static int chapters_tap(menu_state *m) {
+  if (ch_hit(m, CH_KEY)) {
+    snd_menu(SND_SELECT);
+    chapters_page(m, m->story_test ? 0 : (m->st_div > 9 ? 9 : m->st_div) + 1);
+    return 1;
+  }
+  if (m->story_test && (ch_hit(m, CH_PREV) || ch_hit(m, CH_NEXT))) {
+    int to = m->story_test + (ch_hit(m, CH_NEXT) ? 1 : -1);
+    if (to < 1 || to > 10) return 1;
+    snd_menu(SND_CURSOR);
+    chapters_page(m, to);
+    return 1;
+  }
+  return 0;
+}
+static void draw_chapters(const menu_state *m, float screen_w, float screen_h) {
+  const float k = 1.6f;
+  char t[48];
+  if (m->story_test) {
+    int p = m->story_test - 1;
+    snprintf(t, sizeof t, "%sCHAPTERS %d-%d", p >= 5 ? "2ND " : "", 20 * (p % 5) + 1, 20 * (p % 5) + 20);
+  } else {
+    snprintf(t, sizeof t, "UNLOCK ALL CHAPTERS");
+  }
+  hud_ui_begin(screen_w, screen_h);
+  float px = 3.0f;
+  while (px > 2.0f && hud_ui_text_width(t, px) > (CH_KEY[2] - 10.0f) * k) px -= 0.25f;
+  hud_ui_button(CH_KEY[0] * k, CH_KEY[1] * k, CH_KEY[2] * k, CH_KEY[3] * k, 0);
+  hud_ui_text(t, (CH_KEY[0] + 0.5f * CH_KEY[2]) * k - 0.5f * hud_ui_text_width(t, px), (CH_KEY[1] + 0.5f * CH_KEY[3]) * k - 3.5f * px, px,
+              1, m->story_test ? 0.8f : 1, m->story_test ? 0.3f : 1, 1);
+  if (m->story_test) {
+    const float *r[2] = { CH_PREV, CH_NEXT };
+    const char *a[2] = { "<", ">" };
+    for (int i = 0; i < 2; ++i) {
+      int on = i ? m->story_test < 10 : m->story_test > 1;
+      hud_ui_button(r[i][0] * k, r[i][1] * k, r[i][2] * k, r[i][3] * k, 0);
+      hud_ui_text(a[i], (r[i][0] + 0.5f * r[i][2]) * k - 0.5f * hud_ui_text_width(a[i], 4.0f), (r[i][1] + 0.5f * r[i][3]) * k - 14.0f, 4.0f,
+                  1, 1, 1, on ? 1.0f : 0.3f);
+    }
+  }
+  hud_ui_end();
+}
+
+/* ---- the time attack's TRAFFIC key: the course select's bottom bar, in its middle (as
+ * UNLOCK ALL CHAPTERS), a tap turns the traffic on or off for the race ---- */
+static int traffic_tap(menu_state *m) {
+  if (!ch_hit(m, CH_KEY)) return 0;
+  snd_menu(SND_CURSOR);
+  m->ta_traffic = !m->ta_traffic;
+  m->garage_changed = 1; /* (the options saved with it) */
+  return 1;
+}
+static void draw_traffic(const menu_state *m, float screen_w, float screen_h) {
+  const float k = 1.6f, px = 3.0f;
+  const char *t = m->ta_traffic ? "TRAFFIC: ON" : "TRAFFIC: OFF";
+  hud_ui_begin(screen_w, screen_h);
+  hud_ui_button(CH_KEY[0] * k, CH_KEY[1] * k, CH_KEY[2] * k, CH_KEY[3] * k, 0);
+  hud_ui_text(t, (CH_KEY[0] + 0.5f * CH_KEY[2]) * k - 0.5f * hud_ui_text_width(t, px), (CH_KEY[1] + 0.5f * CH_KEY[3]) * k - 3.5f * px, px,
+              1, m->ta_traffic ? 0.8f : 1, m->ta_traffic ? 0.3f : 1, 1);
+  hud_ui_end();
 }
 
 static void st_step(menu_state *m, int tap, int key) {
@@ -4198,7 +4404,7 @@ int menu_story_points(menu_state *m, int won) {
   int p, h;
   menu_story_tune(m, &p, &h);
   /* (a full tune is past the gauge's 33 steps: no points, no tuning screen) */
-  int t = p + h, sel = n % 100, cleared = st_cleared(m, n), u = 0;
+  int t = p + h, sel = n % 100, cleared = st_cleared(m, n) || m->story_test, u = 0;
   m->st_prev = m->st_gauge[mk][c] * 50;
   if (t > 33) {
     u = 0;
@@ -5116,7 +5322,8 @@ void menu_touch(menu_state *m, void *id, int phase, float x, float y) {
       return;
     }
   }
-  if (phase == TOUCH_ENDED) m->vs.held = 0;
+  if (phase == TOUCH_ENDED) m->vs.held = 0, m->test_hold = 0;
+
   if (phase == TOUCH_ENDED && !m->back_touch) m->key_held = 0;
   if (phase != TOUCH_BEGAN) return;
   if (in_attract(m)) {
@@ -7509,8 +7716,11 @@ static void vs_step(menu_state *m, int back) {
     snd_menu(SND_CURSOR);
   } else if (b == VS_START) {
     int all = m->vs.n >= 2;
-    for (int i = 0; i < m->vs.n; ++i) all &= !m->vs.racing[i];
-    if (!all) return;
+    for (int i = 0; i < m->vs.n; ++i) all &= !m->vs.racing[i] && !m->vs.mismatch[i];
+    if (!all) {
+      snd_menu(SND_CANCEL);
+      return;
+    }
     m->vs.start = 1;
     snd_menu(SND_SELECT);
   }
@@ -8318,6 +8528,16 @@ static void step(menu_state *m) {
         m->new_card = 1;
         m->tune_locked = 0;
       }
+      if (m->card_back == MENU_COLOR && m->card_color_was >= 0) {
+        /* an owned car's new colour only kept by the card's tap: back, its own again */
+        int k = menu_own_find(m, m->maker, m->car);
+        if (k >= 0) {
+          m->own[k].color = (signed char)m->card_color_was;
+          m->color = m->card_color_was;
+          m->garage_changed = 1;
+        }
+        m->card_color_was = -1;
+      }
       if (m->card_back == MENU_GARAGE) garage_enter(m, m->own_sel);
       else car_select_enter(m, m->card_back == MENU_SETTING ? MENU_SETTING : MENU_COLOR);
       return;
@@ -8402,6 +8622,17 @@ static void step(menu_state *m) {
     else car_select_enter(m, MENU_GAME);
     return;
   }
+  if (back && m->screen == MENU_SETTING && m->tune_confirm) {
+    /* the pre-race check's back: the screen it came from */
+    int from = m->tune_confirm;
+    m->tune_confirm = 0;
+    snd_menu(SND_CANCEL);
+    if (from == MENU_ST_RIVAL) st_rival_enter(m);
+    else if (from == MENU_TEN_LEVEL) ten_level_enter(m);
+    else if (from == MENU_VS_SEL) go(m, MENU_VS_SEL), m->sel = m->vs.kind;
+    else go(m, MENU_BGM), m->sel = m->bgm, m->slide = m->card_t = 0, m->bars = 1;
+    return;
+  }
   if (back && m->screen > MENU_MAKER && m->screen <= MENU_BGM && m->from < 0 && m->rot_speed == 0.0f && !m->slide && !m->vs.day) {
     snd_menu(SND_CANCEL);
     car_select_enter(m, m->screen - 1);
@@ -8417,7 +8648,7 @@ static void step(menu_state *m) {
   /* the car setting's wheel key: the dress-up menu (on the kind chosen last; the wheel
    * makers' select on Enkei's, wk_s + 0x10 = 3); its back key, and on a change screen it
    * opened (the cabinet's cancel there): back to it, from the wheel's bar to the makers' */
-  if (dress && m->screen == MENU_SETTING && m->from < 0 && !m->new_card) {
+  if (dress && m->screen == MENU_SETTING && m->from < 0 && !m->new_card && !m->tune_confirm) {
     snd_menu(SND_SELECT);
     m->dress_free = 1;
     m->dress_kind = -1;
@@ -8446,6 +8677,7 @@ static void step(menu_state *m) {
     if (m->t >= PRE_LEN && m->ready && !m->deciding) m->deciding = FADE;
     return;
   }
+  if (m->screen == MENU_ST_LEVEL && tap && m->from < 0 && chapters_tap(m)) return;
   if (m->screen == MENU_ST_LEVEL || m->screen == MENU_ST_RIVAL) {
     st_step(m, tap, key);
     return;
@@ -8523,6 +8755,7 @@ static void step(menu_state *m) {
     ten_level_step(m, tap, key);
     return;
   }
+  if (m->screen == MENU_COURSE && tap && m->from < 0 && traffic_tap(m)) return;
   if (m->screen == MENU_TEN_COURSE) m->card_t++;
   int ten = m->screen == MENU_TEN_COURSE;
   int spin = m->screen == MENU_MODE || m->screen == MENU_GAME || m->screen == MENU_VS_SEL;
@@ -8607,6 +8840,7 @@ int menu_update(menu_state *m, float dt) {
         m->new_card = 0;
         card_enter(m, MENU_GARAGE);
       } else if (m->screen == MENU_CARD) {
+        m->card_color_was = -1;
         /* (a new card's setting came first: whether to keep it, then on) */
         if (m->card_back == MENU_SETTING) keep_enter(m);
         else car_select_enter(m, MENU_SETTING);
@@ -8635,8 +8869,21 @@ int menu_update(menu_state *m, float dt) {
           m->tune_full[m->maker][m->car] = 0, m->tune_power[m->maker][m->car] = CAR_TUNE_MAX;
           car_select_enter(m, MENU_SETTING);
         } else {
+          int k = menu_own_find(m, m->maker, m->car);
+          m->card_color_was = k >= 0 ? m->own[k].color : -1;
           own_register(m);
           card_enter(m, MENU_COLOR);
+        }
+      } else if (m->screen == MENU_SETTING && m->tune_confirm) {
+        /* the pre-race check done: on to the race as it was going */
+        int from = m->tune_confirm;
+        m->tune_confirm = 0;
+        if (from == MENU_VS_SEL) {
+          go(m, MENU_VS);
+          m->bars = 1;
+          m->vs.held = 0;
+        } else {
+          go(m, MENU_PRE);
         }
       } else if (m->screen == MENU_SETTING) {
         if (m->new_card) {
@@ -8660,9 +8907,7 @@ int menu_update(menu_state *m, float dt) {
         }
       } else if (m->screen == MENU_VS_SEL) {
         m->vs.kind = m->sel;
-        go(m, MENU_VS);
-        m->bars = 1;
-        m->vs.held = 0;
+        tune_confirm_enter(m, MENU_VS_SEL); /* (the tune the lobby's profile carries) */
       } else if (m->screen == MENU_MODE) {
         m->official = m->sel;
         go(m, MENU_COURSE);
@@ -8683,7 +8928,7 @@ int menu_update(menu_state *m, float dt) {
          * song at random */
         m->ten_level = m->sel;
         m->zone = ten_night(m->ten_course, m->ten_level);
-        go(m, MENU_PRE);
+        tune_confirm_enter(m, MENU_TEN_LEVEL);
         m->song = 1 + rand() % (bgm_lines(m) - 2);
       } else if (m->screen == MENU_ST_LEVEL) {
         m->st_level = m->sel;
@@ -8694,8 +8939,9 @@ int menu_update(menu_state *m, float dt) {
         m->story_n = 20 * st_division(m) + 5 * m->st_level + m->sel;
         m->story_pick = st_index(st_loop(m), m->story_n);
         if (m->story_pick > 111) m->story_pick = 111;
-        go(m, MENU_PRE);
+        tune_confirm_enter(m, MENU_ST_RIVAL);
         m->song = 1 + rand() % (bgm_lines(m) - 2);
+        menu_story_song(m, 0);
       } else if (m->screen == MENU_ST_TUNE) {
         /* the part going on (seqStTuneEff) */
         int power = m->tune.choice, p0 = m->st_power[m->maker][m->car];
@@ -8750,7 +8996,7 @@ int menu_update(menu_state *m, float dt) {
         m->tg.maker = WM_MAKER[m->sel];
         tg_wheel_open_at(m, m->tg.maker);
       } else if (m->screen == MENU_BGM) {
-        go(m, MENU_PRE);
+        tune_confirm_enter(m, MENU_BGM);
       } else if (m->screen == MENU_PRE) {
         return 1;
       }
@@ -8907,7 +9153,8 @@ void menu_draw(const menu_state *m, float screen_w, float screen_h, void (*draw3
     draw_option(m, clock, bars);
     if (m->res_row) draw_option_res(m, screen_w, screen_h);
     draw_option_layout_key(screen_w, screen_h);
-    hud_draw_menu_keys(screen_w, screen_h, m->key_held, m->gyro, 1);
+    draw_option_steer(m, screen_w, screen_h);
+    hud_draw_menu_keys(screen_w, screen_h, m->key_held, m->gyro == HUD_STEER_GYRO, 1);
     anm_fill(0, 0, 0, 1.0f - fade);
     return;
   }
@@ -8915,9 +9162,14 @@ void menu_draw(const menu_state *m, float screen_w, float screen_h, void (*draw3
     /* out of the colour select's black, and back into it */
     if (m->t < FADE && !m->deciding) fade = (float)(m->t + 1) / FADE;
     draw_setting(m, clock, draw3d, ctx, bars);
-    if (!m->deciding) hud_draw_menu_keys(screen_w, screen_h, m->key_held, m->tune_full[m->maker][m->car], 1);
-    if (!m->deciding && !m->new_card) hud_draw_menu_dress(screen_w, screen_h, m->key_held == HUD_MENU_OPTION);
-    if (!m->deciding && !m->new_card) draw_setting_cs_key(screen_w, screen_h);
+    /* (the balance keys whenever the tune can be split: FULL TUNE's, a story tune's of 20 or more) */
+    if (!m->deciding) hud_draw_menu_keys(screen_w, screen_h, m->key_held, m->tune_full[m->maker][m->car] || st_rebalance_ok(m), 1);
+    if (m->tune_confirm) {
+      if (!m->deciding) draw_tune_confirm(screen_w, screen_h);
+    } else {
+      if (!m->deciding && !m->new_card) hud_draw_menu_dress(screen_w, screen_h, m->key_held == HUD_MENU_OPTION);
+      if (!m->deciding && !m->new_card) draw_setting_cs_key(screen_w, screen_h);
+    }
     anm_fill(0, 0, 0, 1.0f - fade);
     if (m->flash) anm_fill(1, 1, 1, (float)m->flash / FLASH_LEN);
     setting_warm();
@@ -8945,6 +9197,7 @@ void menu_draw(const menu_state *m, float screen_w, float screen_h, void (*draw3
     if (m->screen == MENU_ST_LEVEL) draw_st_level(m, clock, fade, bars);
     else draw_st_rival(m, clock, fade, bars);
     if (!m->deciding) hud_draw_menu_keys(screen_w, screen_h, m->key_held, 1, 1);
+    if (!m->deciding && m->screen == MENU_ST_LEVEL && m->from < 0) draw_chapters(m, screen_w, screen_h);
     if (m->flash) anm_fill(1, 1, 1, (float)m->flash / FLASH_LEN);
     return;
   }
@@ -9125,5 +9378,6 @@ void menu_draw(const menu_state *m, float screen_w, float screen_h, void (*draw3
   draw_topbar(bars, fade, m->screen == MENU_TEN_COURSE ? &or_mes : m->screen == MENU_VS_SEL ? &vs_mes : NULL);
   anm_draw(ID.bottom, bars, fade);
   if (!m->deciding) hud_draw_menu_keys(screen_w, screen_h, m->key_held, 1, 1);
+  if (!m->deciding && m->screen == MENU_COURSE && m->from < 0) draw_traffic(m, screen_w, screen_h);
   if (m->flash) anm_fill(1, 1, 1, (float)m->flash / FLASH_LEN);
 }

@@ -11,6 +11,7 @@
 #include "meterdb.h"
 #include "sound.h"
 #include "storydemo.h"
+#include "storycut.h"
 #include "storyinfo.h"
 #include "namedb.h"
 #include "title.h"
@@ -32,6 +33,15 @@ static rect PAUSE = { 236, 12, 48, 48 }; /* the pause menu */
 static rect RESET = { 296, 12, 48, 48 };
 static rect CAMERA = { 116, 12, 48, 48 };
 static rect TRANS = { 176, 12, 48, 48 }; /* AT/MT */
+/* the on-screen wheel (its centre and radius) and the stick's zone, in the left keys' place
+ * (the steer keys' group, KEY_LEFT: scaled and moved with them by the KEY LAYOUT) */
+#define WHEEL_CX 141.0f
+#define WHEEL_CY 640.0f
+#define WHEEL_R 112.0f
+#define WHEEL_LOCK 1.5708f /* a quarter turn: full lock */
+static const rect STICK_ZONE = { 0, 430, 430, 338 };
+#define STICK_R 90.0f   /* the knob's reach: full lock */
+#define STICK_DEAD 0.08f
 /* the gyro layout: the brake where the steer buttons were, the shift buttons where the brake was */
 static const rect G_BRAKE = { 16, 604, 250, 150 };
 static const rect G_SHIFT_UP = { 812, 610, 96, 68 };
@@ -62,6 +72,13 @@ static rect place(rect r, int side, float k, float dx, float dy) {
 
 /* a touch key's layout rect where it is on screen */
 static rect key(rect r, int side) { return place(r, side, USER_K[side], USER_DX[side], USER_DY[side]); }
+
+/* a screen point in a side's own layout px (key()'s inverse) */
+static void unkey(int side, float x, float y, float *lx, float *ly) {
+  rect o = key((rect){ 0, 0, 1, 1 }, side);
+  *lx = (x - o.x) / o.w;
+  *ly = (y - o.y) / o.h;
+}
 
 /* the projection of the layout's 1024x768 on the whole screen */
 static mat4 screen_ortho(float w, float h) { return mat4_ortho(-EDGE, w + EDGE, h, 0, -1, 1); }
@@ -103,6 +120,48 @@ void hud_init(hud_state *h, float screen_w, float screen_h) {
   h->screen_h = screen_h;
 }
 
+/* the wheel's or the stick's finger: down in its place, on as it moves, off when lifted */
+static int steer_touch(hud_state *h, void *id, int phase, float x, float y) {
+  if (h->steer_mode != HUD_STEER_WHEEL && h->steer_mode != HUD_STEER_STICK) return 0;
+  float lx, ly;
+  unkey(KEY_LEFT, x, y, &lx, &ly);
+  int wheel = h->steer_mode == HUD_STEER_WHEEL;
+  if (phase == TOUCH_BEGAN && !h->steer_touch) {
+    float dx = lx - WHEEL_CX, dy = ly - WHEEL_CY;
+    if (wheel ? dx * dx + dy * dy > WHEEL_R * WHEEL_R * 1.3f : !inside(STICK_ZONE, lx, ly)) return 0;
+    h->steer_touch = id;
+    h->wheel_last = atan2f(dy, dx);
+    h->stick_x0 = h->stick_x = lx, h->stick_y0 = h->stick_y = ly;
+    return 1;
+  }
+  if (id != h->steer_touch) return 0;
+  if (phase == TOUCH_MOVED) {
+    if (wheel) {
+      /* the turn by the finger's angle about the centre (its steps unwrapped) */
+      float a = atan2f(ly - WHEEL_CY, lx - WHEEL_CX), d = a - h->wheel_last;
+      if (d > (float)M_PI) d -= 2.0f * (float)M_PI;
+      if (d < -(float)M_PI) d += 2.0f * (float)M_PI;
+      if ((lx - WHEEL_CX) * (lx - WHEEL_CX) + (ly - WHEEL_CY) * (ly - WHEEL_CY) > 400.0f) h->wheel_turn += d;
+      h->wheel_last = a;
+      h->wheel_turn = fmaxf(-WHEEL_LOCK, fminf(WHEEL_LOCK, h->wheel_turn));
+      h->steer_v = h->wheel_turn / WHEEL_LOCK;
+    } else {
+      float dx = lx - h->stick_x0, dy = ly - h->stick_y0, r = sqrtf(dx * dx + dy * dy);
+      if (r > STICK_R) dx *= STICK_R / r, dy *= STICK_R / r;
+      h->stick_x = h->stick_x0 + dx, h->stick_y = h->stick_y0 + dy;
+      float v = dx / STICK_R, a = fabsf(v);
+      a = a <= STICK_DEAD ? 0.0f : (a - STICK_DEAD) / (1.0f - STICK_DEAD);
+      h->steer_v = v < 0 ? -a : a;
+    }
+    return 1;
+  }
+  if (phase != TOUCH_BEGAN) { /* lifted: the stick gone (the wheel turns back: hud_input) */
+    h->steer_touch = 0;
+    if (!wheel) h->steer_v = 0;
+  }
+  return 1;
+}
+
 void hud_touch(hud_state *h, void *id, int phase, float x, float y) {
   rect brake = h->gyro ? key(G_BRAKE, KEY_LEFT) : key(BRAKE, KEY_RIGHT);
   rect up = key(h->gyro ? G_SHIFT_UP : SHIFT_UP, KEY_RIGHT), down = key(h->gyro ? G_SHIFT_DOWN : SHIFT_DOWN, KEY_RIGHT);
@@ -118,8 +177,12 @@ void hud_touch(hud_state *h, void *id, int phase, float x, float y) {
     else if (inside(key(TRANS, KEY_TOP), x, y)) h->trans_pressed++;
     else if (inside(key(RESET, KEY_TOP), x, y)) h->reset_pressed++;
     else if (inside(key(PAUSE, KEY_TOP), x, y)) h->pause_pressed++;
-    else if (!h->gyro && inside(left, x, y)) h->left_touch = id;
-    else if (!h->gyro && inside(right, x, y)) h->right_touch = id;
+    else if (steer_touch(h, id, phase, x, y)) {}
+    else if (h->steer_mode == HUD_STEER_KEYS && inside(left, x, y)) h->left_touch = id;
+    else if (h->steer_mode == HUD_STEER_KEYS && inside(right, x, y)) h->right_touch = id;
+  } else if (id && id == h->steer_touch) {
+    steer_touch(h, id, phase, x, y);
+    return;
   } else if (phase == TOUCH_MOVED) {
     /* sliding a finger between the pedals, or between left and right, switches button */
     if (id == h->throttle_touch && inside(brake, x, y)) { h->throttle_touch = 0; h->brake_touch = id; }
@@ -147,7 +210,14 @@ void hud_input(hud_state *h, car_input *in) {
     s = a <= 0 ? 0.0f : s > 1.0f ? 1.0f : s;
     in->steer = h->tilt < 0 ? -s : s;
   }
-  in->analog = h->gyro;
+  if (h->steer_mode == HUD_STEER_WHEEL && !h->steer_touch && h->wheel_turn != 0.0f) {
+    /* let go, the wheel turns back to straight (a third of a lock a tenth of a second) */
+    float back = WHEEL_LOCK * 0.05f;
+    h->wheel_turn = fabsf(h->wheel_turn) <= back ? 0.0f : h->wheel_turn - (h->wheel_turn > 0 ? back : -back);
+    h->steer_v = h->wheel_turn / WHEEL_LOCK;
+  }
+  if (h->steer_mode == HUD_STEER_WHEEL || h->steer_mode == HUD_STEER_STICK) in->steer = h->steer_v;
+  in->analog = h->gyro || h->steer_mode == HUD_STEER_WHEEL || h->steer_mode == HUD_STEER_STICK;
   in->throttle = h->throttle_touch ? (h->slide ? h->throttle_v : 1.0f) : 0.0f;
   in->brake = h->brake_touch ? (h->slide ? h->brake_v : 1.0f) : 0.0f;
   in->shift_up = h->shift_up > 0;
@@ -1338,7 +1408,10 @@ static void draw_mark(const car_state *car, const rival_mark *m, int lead) {
     for (int i = 0; i < 3; ++i) q[k][i] /= q[k][3];
   }
   float x = q[1][0], y = q[1][1], z = q[1][2], adv = m->adv;
-  float sx = 320.0f + 320.0f * x, sy = 240.0f - 240.0f * y;
+  /* the 640x480 screen is the middle of a wider one (anm_view): the view's -1..1 across x
+   * spans that edge more each side (Allan 10-30: the versus' arrows drifted off the cars) */
+  float half_w = 320.0f + anm_edge() * (640.0f / 1024.0f);
+  float sx = 320.0f + half_w * x, sy = 240.0f - 240.0f * y;
   int band = (int)(fabsf(adv) * 5e-5f);
   if (band < 0) band = 0;
   if (band > 2) band = 2;
@@ -1356,7 +1429,7 @@ static void draw_mark(const car_state *car, const rival_mark *m, int lead) {
   }
   typeof(mark_state[0]) *st = &mark_state[m->mark];
   if (x > -1 && x < 1 && y > -1 && y < 1 && z > -1 && z < 1) {
-    float scale = (q[2][0] - q[0][0]) * 100.0f;
+    float scale = (q[2][0] - q[0][0]) * 100.0f * (half_w / 320.0f);
     scale = scale < 0 ? 0 : scale > 1.8f ? 1.8f : scale;
     int f;
     if (!m->tg) {
@@ -1376,8 +1449,8 @@ static void draw_mark(const car_state *car, const rival_mark *m, int lead) {
       if (m->name) mark_name(a, f, m->name, sx, sy, scale);
     }
   } else {
-    float mx = 640.0f - sx;
-    mx = mx < R_HALF_W ? R_HALF_W : mx > 640 - R_HALF_W ? 640 - R_HALF_W : mx;
+    float mx = 640.0f - sx, lo = 320.0f - half_w + R_HALF_W, hi = 320.0f + half_w - R_HALF_W;
+    mx = mx < lo ? lo : mx > hi ? hi : mx;
     float scale = (1.5f + 1.0f - fabsf(adv) / 150000.0f) * 0.4f;
     int f = st->loop[band]++ % (int)MARK_LOOP[band];
     if (m->tg) f += MARK_TG[m->mark];
@@ -1755,6 +1828,106 @@ void hud_demo_draw(const hud_state *h) {
   }
 }
 
+/* ---- the story's in-race lines (Cut::clCutIn's story branch, recompiled: app.c runs it through
+ * car_cutin_start / car_cutin_update and hands its clCutinDisp calls here). clRaceThread::
+ * initStory gives it the episode's data/cutin/jp/CutIn<n>.txt: the start's line, lines as the
+ * player gets so far down the road (one, or a run of them one after another), on a hit, and the
+ * win's or the loss's. Each as the shows' places (demo_speak): setSpeak with the flash plays
+ * cons_g_cutin_effect (or cutin2's, the tag's flash) and the line's anime 91..109 at the place's y
+ * (0x93cfc80 by ePos) and x, then holds the line (frame 0, turning3_cutin); without, the line at
+ * frame 109 at once; setEnd plays 61..69. Text and face: menu.bin's STORYCUT_TEXT_BASE /
+ * STORYCUT_FACE_BASE + the row's (src/storycut.h). ---- */
+static struct {
+  int first, n; /* the file's rows in STORYCUT_ROW; n 0: none */
+  demo_place cut[3];
+  int warm[DEMO_WARM], n_warm;
+} scut;
+
+void hud_story_cut_file(const char *name) {
+  memset(&scut, 0, sizeof scut);
+  for (int i = 0; i < 3; ++i) scut.cut[i].flash.anim = scut.cut[i].serifu.anim = -1;
+  for (int f = 0; name && f < STORYCUT_FILES; ++f) {
+    /* (no strcmp: the patched iOS SDK has none for armv7) */
+    const char *a = STORYCUT_FILE[f].name, *b = name;
+    while (*a && *a == *b) a++, b++;
+    if (!*a && !*b) scut.first = STORYCUT_FILE[f].first, scut.n = STORYCUT_FILE[f].n;
+  }
+  /* its lines and faces drawn up in GL now, kept up till they are drawn */
+  for (int i = 0; i < scut.n; ++i) {
+    const storycut_row *r = &STORYCUT_ROW[scut.first + i];
+    int list[2] = { anm_sprite(STORYCUT_TEXT_BASE + r->text), anm_sprite(STORYCUT_FACE_BASE + r->face) };
+    for (int k = 0; k < 2; ++k) {
+      int dup = list[k] < 0 || scut.n_warm >= DEMO_WARM;
+      for (int j = 0; !dup && j < scut.n_warm; ++j) dup = scut.warm[j] == list[k];
+      if (!dup) scut.warm[scut.n_warm++] = list[k];
+    }
+  }
+  for (int i = 0; i < scut.n_warm; ++i) anm_warm_sprite(scut.warm[i], 1);
+}
+
+void hud_story_cut_speak(int pos, int row, int anim, int flash_anim, int flash, int x) {
+  if (!scut.n || row < 0 || row >= scut.n) return;
+  pos = pos >= 0 && pos < 6 ? pos : 0;
+  demo_place *k = &scut.cut[DEMO_PLACE[pos]];
+  if (flash) {
+    cut_play(&k->flash, demo_cut_anim(1, flash_anim), 91, 19);
+    cut_play(&k->serifu, demo_cut_anim(0, anim), 91, 19);
+    k->state = 1;
+  } else {
+    k->flash.anim = -1;
+    cut_play(&k->serifu, demo_cut_anim(0, anim), 109, 1);
+    k->state = 2;
+  }
+  k->row = scut.first + row;
+  k->x = x;
+  k->y = DEMO_Y[pos];
+}
+
+void hud_story_cut_end(int pos) {
+  pos = pos >= 0 && pos < 6 ? pos : 0;
+  demo_place *k = &scut.cut[DEMO_PLACE[pos]];
+  if (!k->state) return;
+  k->flash.anim = -1;
+  if (k->serifu.anim >= 0) cut_play(&k->serifu, k->serifu.anim, 61, 9);
+  k->state = 3;
+}
+
+void hud_story_cut_step(void) {
+  if (!scut.n) return;
+  for (int i = 0; i < 3; ++i) {
+    demo_place *k = &scut.cut[i];
+    if (k->state == 1 && cut_bound(&k->serifu)) {
+      k->flash.anim = -1;
+      cut_play(&k->serifu, k->serifu.anim, 0, 1);
+      k->state = 2;
+      snd_menu(SND_TURN3_CUTIN);
+    } else if (k->state == 3 && cut_bound(&k->serifu)) {
+      k->flash.anim = k->serifu.anim = -1;
+      k->state = 0;
+    }
+    if (k->flash.anim >= 0) k->flash.t++;
+    if (k->serifu.anim >= 0) k->serifu.t++;
+  }
+  for (int i = 0; i < scut.n_warm; ++i) anm_warm_sprite(scut.warm[i], 0);
+}
+
+static void draw_story_cut(void) {
+  if (!scut.n) return;
+  int t_face = anm_sprite(T_CUT_FACE), t_text = anm_sprite(T_CUT_TEXT);
+  for (int i = 0; i < 3; ++i) {
+    demo_place *k = &scut.cut[i];
+    if (k->flash.anim >= 0) anm_draw_ex(k->flash.anim, cut_frame(&k->flash), 1, (float)k->x, (float)k->y, NULL, 0);
+    if (k->serifu.anim < 0) continue;
+    const storycut_row *r = &STORYCUT_ROW[k->row];
+    int f = cut_frame(&k->serifu), text = anm_sprite(STORYCUT_TEXT_BASE + r->text);
+    anm_swap sw[2] = { { t_face, anm_sprite(STORYCUT_FACE_BASE + r->face) }, { t_text, -1 } };
+    anm_draw_ex(k->serifu.anim, f, 1, (float)k->x, (float)k->y, sw, 2);
+    int w = (int)anm_sprite_width(text) - CUT_CELL;
+    anm_swap only[2] = { { t_face, -1 }, { t_text, text } };
+    anm_draw_ex(k->serifu.anim, f, 1, (float)(k->x + (CUT_CELL - w) / 2 + (CUT_FULL - CUT_CELL) / 2), (float)k->y, only, 2);
+  }
+}
+
 static void draw_ten(const car_state *car) {
   static int men = -2, split;
   if (men == -2) {
@@ -2003,20 +2176,49 @@ static void draw_keys(const hud_state *h, float steer, int all_keys) {
     rect brake = h->gyro ? G_BRAKE : BRAKE, up = h->gyro ? G_SHIFT_UP : SHIFT_UP, down = h->gyro ? G_SHIFT_DOWN : SHIFT_DOWN;
     mat4 side_proj = key_ortho(h->screen_w, h->screen_h, KEY_LEFT);
     glUniformMatrix4fv(u_proj, 1, GL_FALSE, side_proj.m);
-    if (!h->gyro) {
+    if (h->steer_mode == HUD_STEER_WHEEL) {
+      /* a wheel: rim, hub and three spokes turned by the wheel's turn, the top's mark orange */
+      float a = h->wheel_turn, cx = WHEEL_CX, cy = WHEEL_CY;
+      color(0.04f, 0.05f, 0.08f, 0.45f);
+      disc(cx, cy, WHEEL_R);
+      color(0.85f, 0.88f, 0.92f, h->steer_touch ? 0.95f : 0.65f);
+      ring(cx, cy, WHEEL_R - 18, WHEEL_R);
+      disc(cx, cy, 22);
+      for (int k = 0; k < 3; ++k) {
+        float sa = a + (k == 0 ? (float)M_PI : k == 1 ? 0.0f : (float)M_PI / 2.0f), c = cosf(sa), sn = sinf(sa);
+        float px = -sn * 7, py = c * 7, r0 = 20, r1 = WHEEL_R - 16;
+        triangle(cx + c * r0 + px, cy + sn * r0 + py, cx + c * r1 + px, cy + sn * r1 + py, cx + c * r0 - px, cy + sn * r0 - py);
+        triangle(cx + c * r1 + px, cy + sn * r1 + py, cx + c * r1 - px, cy + sn * r1 - py, cx + c * r0 - px, cy + sn * r0 - py);
+      }
+      color(1.0f, 0.42f, 0.05f, 0.95f);
+      float ta = a - (float)M_PI / 2.0f;
+      disc(cx + cosf(ta) * (WHEEL_R - 9), cy + sinf(ta) * (WHEEL_R - 9), 9);
+    } else if (h->steer_mode == HUD_STEER_STICK) {
+      /* the stick: its base and knob where the thumb is, else a faint ring where it waits */
+      float bx = h->steer_touch ? h->stick_x0 : WHEEL_CX, by = h->steer_touch ? h->stick_y0 : WHEEL_CY;
+      float kx = h->steer_touch ? h->stick_x : bx, ky = h->steer_touch ? h->stick_y : by;
+      color(0.04f, 0.05f, 0.08f, h->steer_touch ? 0.45f : 0.25f);
+      disc(bx, by, STICK_R + 20);
+      color(0.85f, 0.88f, 0.92f, h->steer_touch ? 0.8f : 0.35f);
+      ring(bx, by, STICK_R + 16, STICK_R + 20);
+      color(h->steer_touch ? 1.0f : 0.85f, h->steer_touch ? 0.42f : 0.88f, h->steer_touch ? 0.05f : 0.92f, h->steer_touch ? 0.9f : 0.5f);
+      disc(kx, ky, 38);
+    } else if (!h->gyro) {
       button(LEFT, h->left_touch != 0);
       button(RIGHT, h->right_touch != 0);
       color(1, 1, 1, 0.92f);
       chevron(LEFT.x + LEFT.w / 2 - 6, LEFT.y + LEFT.h / 2, 30, -1, 0);
       chevron(RIGHT.x + RIGHT.w / 2 + 6, RIGHT.y + RIGHT.h / 2, 30, 1, 0);
     }
-    /* wheel angle bar between the two */
-    float mid = (LEFT.x + RIGHT.x + RIGHT.w) / 2;
-    color(0, 0, 0, 0.4f);
-    fill_rect(LEFT.x, LEFT.y - 14, RIGHT.x + RIGHT.w - LEFT.x, 6);
-    color(1.0f, 0.42f, 0.05f, 0.95f);
-    if (steer > 0) fill_rect(mid, LEFT.y - 14, steer * (mid - LEFT.x), 6);
-    else fill_rect(mid + steer * (mid - LEFT.x), LEFT.y - 14, -steer * (mid - LEFT.x), 6);
+    /* wheel angle bar between the two (the stick's above its zone; the wheel shows its own) */
+    float mid = (LEFT.x + RIGHT.x + RIGHT.w) / 2, by = h->steer_mode == HUD_STEER_STICK ? STICK_ZONE.y - 14 : LEFT.y - 14;
+    if (h->steer_mode != HUD_STEER_WHEEL) {
+      color(0, 0, 0, 0.4f);
+      fill_rect(LEFT.x, by, RIGHT.x + RIGHT.w - LEFT.x, 6);
+      color(1.0f, 0.42f, 0.05f, 0.95f);
+      if (steer > 0) fill_rect(mid, by, steer * (mid - LEFT.x), 6);
+      else fill_rect(mid + steer * (mid - LEFT.x), by, -steer * (mid - LEFT.x), 6);
+    }
 
     /* pedals: ribbed pads, throttle tall and narrow like the cabinet's (the gyro's brake on the left) */
     if (h->gyro) {
@@ -2133,6 +2335,7 @@ void hud_draw(const hud_state *h, const car_state *car, const car_input *in, flo
   draw_ten_banner(car);
   draw_countdown(car);
   draw_cutin();
+  draw_story_cut();
   glDisable(GL_BLEND);
 }
 
@@ -2468,7 +2671,8 @@ void hud_layout_clamp(int group, int gyro, float k, float *dx, float *dy) {
 void hud_draw_layout(float screen_w, float screen_h, int gyro, int sel) {
   hud_state h;
   hud_init(&h, screen_w, screen_h);
-  h.gyro = gyro;
+  h.steer_mode = gyro; /* (the OPTION's steering: HUD_STEER_*) */
+  h.gyro = gyro == HUD_STEER_GYRO;
   glUseProgram(prog);
   mat4 proj = screen_ortho(screen_w, screen_h);
   glUniformMatrix4fv(u_proj, 1, GL_FALSE, proj.m);
@@ -2485,7 +2689,7 @@ void hud_draw_layout(float screen_w, float screen_h, int gyro, int sel) {
   glUniformMatrix4fv(u_proj, 1, GL_FALSE, proj.m);
   /* each group's box, the chosen one's orange */
   for (int g = 0; g < HUD_KEY_GROUPS; ++g) {
-    rect r = key(group_rect(g, gyro), g);
+    rect r = key(group_rect(g, h.gyro), g);
     r = (rect){ r.x - 6, r.y - 6, r.w + 12, r.h + 12 };
     if (g == sel) color(1.0f, 0.42f, 0.05f, 0.95f);
     else color(1, 1, 1, 0.35f);

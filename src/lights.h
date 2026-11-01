@@ -43,5 +43,9 @@ void lights_draw_neon(const mat4 *proj, const mat4 *view, const float *frame, in
 /* The wall sparks' pictures (lights.wpk's eighth and ninth: car_spark03.tga, car_spark04.tga),
  * 0 when lights.wpk has none */
 uint32_t lights_spark_texture(int k);
+/* sprite/tirepattern.tga (lights.wpk's tenth: clTireTrack's), 0 without */
+uint32_t lights_track_texture(void);
+/* car_backfire.igb's images k (lights.wpk's after it), 0 without */
+uint32_t lights_backfire_texture(int k);
 
 #endif

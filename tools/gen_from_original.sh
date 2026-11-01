@@ -47,6 +47,8 @@ run python3 tools/storydemo.py "$MAIN"                 # src/storydemo.h, tools/
 run python3 tools/storycity.py "$MAIN" "$D/carconfig/ytConfigStory.txt"   # src/storycity.h
 run python3 tools/sttune.py "$MAIN"                    # src/sttune.h, tools/sttune_texts.txt
 run python3 tools/steff.py "$MAIN"                     # src/steff.h, tools/steff_texts.txt
+run python3 tools/storycut.py "$ORIG"                  # src/storycut.h, tools/storycut_texts.txt
+run python3 tools/storybgm.py "$MAIN"                  # src/storybgm.h
 # (namedb.py and tendb.py import menupack.py, which reads the story headers above)
 run python3 tools/tendb.py "$MAIN" "$D/carconfig/ytConfigTenFight.txt"    # src/tendb.h
 run python3 tools/namedb.py "$MAIN"                    # src/namedb.h
@@ -54,6 +56,7 @@ echo "3D bits..."
 mkdir -p data
 run python3 tools/stage/pack_battle.py "$ORIG" src/battle.h
 run python3 tools/stage/pack_tenline.py "$D" src/tenline.h
+run python3 tools/stage/pack_backfire.py "$ORIG" src/backfiredb.h
 [ -d "$D/menu3d/course" ] && run python3 tools/stage/pack_mini.py "$ORIG" data/minicourse.wpk src/minicourse.h
 echo "  python3 tools/stage/barricades.py main > tools/stage/barricades.txt"
 python3 tools/stage/barricades.py "$MAIN" > tools/stage/barricades.txt

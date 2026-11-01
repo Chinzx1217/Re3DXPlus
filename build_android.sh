@@ -83,7 +83,7 @@ if [ "$1" = "data" ]; then
   done
   mkdir -p data/carconfig
   cp "../Wangan Midnight Maximum Tune 3DX+ (Japan)/data/carconfig/"ytConfig*.txt data/carconfig/
-  for d in traffic carconfig cars chara sound wheels vinyl; do
+  for d in traffic carconfig cars chara sound wheels vinyl cutin; do
     if [ -d data/$d ]; then "$ADB" push data/$d $D/; fi
   done
   "$ADB" shell mkdir -p $D/rtmovie

@@ -19,12 +19,22 @@ typedef struct {
    * turn (radians, + to the right, app_tilt); full: the turn that is full lock */
   int gyro;
   float tilt, full;
+  /* the steering (the OPTION screen's, Allan 10-31): HUD_STEER_KEYS the two keys, _GYRO the
+   * tilt (gyro set too), _WHEEL a wheel on screen turned with a finger (WHEEL_LOCK of its turn
+   * full lock, back to straight when let go), _STICK a stick that comes up where the thumb
+   * goes down in the left zone (the sideways reach full lock past a small dead zone).
+   * steer_touch the finger on them, steer_v the steer it gives, the wheel's turn so far and
+   * the finger's last angle, the stick's base and knob (layout px of the left keys) */
+  int steer_mode;
+  void *steer_touch;
+  float steer_v, wheel_turn, wheel_last, stick_x0, stick_y0, stick_x, stick_y;
   /* the OPTION screen's slider pedals: a pedal's travel is the finger's height on its key
    * (the key's foot 0, its top and above 1); the pedals' last travels */
   int slide;
   float throttle_v, brake_v;
 } hud_state;
 
+enum { HUD_STEER_KEYS, HUD_STEER_GYRO, HUD_STEER_WHEEL, HUD_STEER_STICK, HUD_STEER_MODES };
 void hud_init(hud_state *h, float screen_w, float screen_h);
 /* A screen wider than 4:3 (an iPhone's 3:2): edge layout px more on each side of the
  * 1024x768 layout (0 on the iPad); the consoles move out to the sides, the race's touch keys
@@ -106,6 +116,12 @@ void hud_demo_start(int table);
 int hud_demo_step(void);
 void hud_demo_draw(const hud_state *h);
 void hud_demo_end(void);
+/* The story's in-race lines (Cut::clCutIn: car_cutin_start's file, NULL none; its speak and end
+ * calls; one step a race frame) */
+void hud_story_cut_file(const char *name);
+void hud_story_cut_speak(int pos, int row, int anim, int flash_anim, int flash, int x);
+void hud_story_cut_end(int pos);
+void hud_story_cut_step(void);
 /* clGraphicFrame's negaposi (+0x174, neg.cg) as a 10-in-a-row rival is beaten: the 3D scene
  * drawn so far, colours inverted. */
 void hud_negate(const hud_state *h);

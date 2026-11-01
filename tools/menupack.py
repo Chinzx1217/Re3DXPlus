@@ -453,6 +453,9 @@ EXTRA += WHEEL_SET_SPRITES + [0x18b5, *range(0x18ad, 0x18b4), *range(0x19df, 0x1
 EXTRA += [*range(0x1bcf, 0x1bd5), 0x16f1, 0x16f3, 0x1ab3, 0x1ab4, 0x19dc]
 # the versus' race title page: the time attack's with menu_p_pre_title_vs
 EXTRA += [2910]
+# clRaceFinishConsole (a versus' end): menu_g_finish_win's 0xa44 as the place (0x93cfc34:
+# cons_p_vs_place_1st..4th), its 0xa47 as the machines (0x93cfc44: cons_p_vs_place_s_2..4)
+EXTRA += [*range(2625, 2632)]
 # the stickers' change: the places' pictures (0x9409220: line 1, fire 1, line 2, fire 2,
 # Pac-Man, namco, the makers' works colours, line 3, fire 3, tribal), the lock, the swatches
 # (the colours, fire 2's gradations), the NEW marks (0x9409260), the gem cars' works colours
@@ -476,7 +479,7 @@ def _tendb():
     import re
     here = os.path.dirname(os.path.abspath(__file__))
     path = os.path.join(here, "..", "src", "tendb.h")
-    if not os.path.exists(path):  # (tools/tendb.py imports this module before it writes tendb.h)
+    if not os.path.exists(path):  # (tools/tendb.py imports this file before it writes tendb.h)
         return []
     t = open(path).read()
     pre = t.split("TENDB_PRE[10]", 1)[1]
@@ -610,6 +613,12 @@ def cutin_image_ids(elf):
     return out
 
 
+# The story's in-race lines (Cut::clCutIn, data/cutin/jp/CutIn<n>.txt): tools/storycut.py's
+STORYCUT_TEXT_BASE, STORYCUT_FACE_BASE = 120000, 124000
+_STORYCUT_TEXTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "storycut_texts.txt")
+STORYCUT = [(f[0], int(f[1]), *f[2:]) for f in (l.rstrip("\n").split("\t") for l in (open(
+    _STORYCUT_TEXTS, encoding="utf-8") if os.path.exists(_STORYCUT_TEXTS) else ())) if f[0] in ("T", "F")]
+
 SETTING_TEXTS = [(3, "STOCK"), (3, "FULL TUNE"), (3, "AT"), (3, "MT"), (1, "TAP THE CAR TO GO ON")]
 # The port's own OPTION screen (menu.c draw_option), pre-rendered as OPTION_TEXT_BASE + k.
 OPTION_TEXT_BASE = 101900
@@ -621,7 +630,10 @@ OPTION_TEXTS = [(3, "CONTROLS"), (3, "BUTTONS"), (3, "GYRO"), (1, "STEERING"), (
                 (1, "ALL PARTS & TUNE:  ON"), (1, "ALL PARTS & TUNE:  OFF"),  # (the colour select's key)
                 # Android's GRAPHICS rows (menu.c draw_option's hq rows)
                 (1, "HD TEXTURES"), (1, "BLOOM"), (1, "SSAO"), (1, "WET ROAD"), (1, "PAINT REFLECTION"),
-                (1, "ANTI-ALIASING"), (3, "4X"), (3, "2X")]
+                (1, "ANTI-ALIASING"), (3, "4X"), (3, "2X"),
+                # the testers' story switch (menu.c O_TEST): off, then the divisions it opens
+                (1, "STORY TEST: OFF")] + [(1, "STORY TEST: %sEPISODES %d-%d OPEN" % ("2ND LOOP " if k >= 5 else "", 20 * (k % 5) + 1, 20 * (k % 5) + 20))
+                                           for k in range(10)]
 # The versus select (menu.c MENU_VS_SEL, menu_layout_mode_sel_3 and its picture and ring with
 # the port's discs in the story, 10 out run and time attack discs' places): the top bars'
 # titles as VS_TEXT_BASE + k, the discs (tools/vsdiscs.py, tools/vsdisc/) as VS_ICON_BASE + k
@@ -1053,6 +1065,25 @@ def main():
             sprites.append(sheet.crop((x, y, x + CUTIN_FACE, y + CUTIN_FACE)))
             ids.append(DEMO_FACE_BASE + k)
         ZIPPED.update((DEMO_TEXT_BASE + k, DEMO_FACE_BASE + k))
+
+    # the story's in-race lines (tools/storycut.py: src/storycut.h's rows and storycut_texts.txt):
+    # each text in font 3, each face as the 10-in-a-row's (cell expression - 1 of the sheet)
+    for kind, k, *rest in STORYCUT:
+        if kind == "T":
+            sprites.append(render_lines(elf, names, root, CUTIN_FONT, rest[0].split("\\n")))
+            ids.append(STORYCUT_TEXT_BASE + k)
+            ZIPPED.add(STORYCUT_TEXT_BASE + k)
+            continue
+        char, expr = rest[0], int(rest[1])
+        sid = images.get(char)
+        if sid is None or not names.get(sid):
+            continue
+        sheet = Image.open(f"{root}/{names[sid]}").convert("RGBA")
+        cols, c = max(1, sheet.size[0] // CUTIN_FACE), max(0, expr - 1)
+        x, y = c % cols * CUTIN_FACE, c // cols * CUTIN_FACE
+        sprites.append(sheet.crop((x, y, x + CUTIN_FACE, y + CUTIN_FACE)))
+        ids.append(STORYCUT_FACE_BASE + k)
+        ZIPPED.add(STORYCUT_FACE_BASE + k)
 
     cells = uv_cells()
     for n in UV_USED:

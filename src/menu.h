@@ -167,6 +167,22 @@ typedef struct {
   /* the gear key pressed; the maker under the cursor meanwhile; the screen it was pressed on
    * (the maker select or the SAVE DATA screen) */
   int option, opt_sel, opt_from;
+  /* The testers' hidden switch (Allan 10-31): on the OPTION screen a finger held 3 s on the
+   * CONTROLS band steps it off -> episodes 1-20 -> 21-40 -> .. -> 81-100 -> the second loop's
+   * 1-20 .. 81-100 -> off. On (story_test = the tested st_div + 1), the story's level select
+   * shows that division with every episode open, and its races change no progress (no clear,
+   * no tuning points). Kept with the options; test_hold the frames held, test_note the note's. */
+  int story_test, test_hold, test_note;
+  /* The pre-race tune check (Allan 10-31): the car setting shown again right before a race
+   * loads (a story episode chosen, the time attack's or 10-in-a-row's time zone, the versus
+   * kind before its lobby), DONE on to it; tune_confirm the screen it came from (0 none) */
+  int tune_confirm;
+  /* the time attack's traffic (Allan 10-31): the course select's TRAFFIC key, off as the
+   * arcade's (its hidden button set SConfigPlay +0xac); kept with the options */
+  int ta_traffic;
+  /* an owned car's colour before the colour select's choice went onto it (-1 none): its card's
+   * back key gives it back (only the card's tap keeps the new one; Allan 10-31) */
+  int card_color_was;
   /* The OPTION screen's KEY LAYOUT (MENU_LAYOUT, Allan 10-29): the race's touch keys by group
    * (hud.h HUD_KEYS_*) their size (percent, 60..160) and move (layout px), kept with the
    * options; the editor's chosen group, the finger dragging it (lay_drag) from where (lay_x, y
@@ -350,6 +366,7 @@ typedef struct {
     int n, me, host;
     char name[MENU_VS_PLAYERS][17], car[MENU_VS_PLAYERS][32];
     short glyph[MENU_VS_PLAYERS][5]; /* the names' own characters (namedb.h's, -1 past the end; none from an older build) */
+    unsigned char mismatch[MENU_VS_PLAYERS]; /* a player on another build (app.c VS_BUILD): no start with one */
     int racing[MENU_VS_PLAYERS];
     int ramp, km;        /* the host's choice (the others: the last race's) */
     int last_place, last_n; /* the last race's place of how many (0 none) */
@@ -526,6 +543,8 @@ void menu_finish_warm(int goal);
 /* a story race's end: WIN or LOSE; next: won, and the select runs another race (no WIN yet:
  * its fade, then the next race), fade the race's STORYRACE_FADE */
 void menu_finish_story(menu_state *m, int won, int next, float gap, int fade);
+/* the story select's race `race` (0 first): its own music (clEffStoryType::getBgm) as the song */
+void menu_story_song(menu_state *m, int race);
 /* after menu_finish_open, for a 10-in-a-row: its end (clTenResult) in place of the time
  * attack's, from the rivals beaten, the total time and the medal (CTenSeq::GetResult 1..3,
  * counted when all were beaten) */

@@ -13,9 +13,10 @@ their glows and flashes from goal_light01.tga, inside effect/goal_light_yellow.i
 effect/rival_line_blue.igb (its mesh: pack_tenline.py).
 
 Writes
-  lights.wpk  the nine sprites as a WPK2 with no chunks (render.h reads its textures),
+  lights.wpk  the sprites as a WPK2 with no chunks (render.h reads its textures),
               in the order streetlight, streettube, buildinglight, bridge_light,
-              goal_light01, 10rival_line, car_lightspot_a3, car_spark03, car_spark04
+              goal_light01, 10rival_line, car_lightspot_a3, car_spark03, car_spark04,
+              tirepattern, then car_backfire.igb's three images
   lights.bin  "LIT1" u32 n_street u32 n_building, then per light f32 x y z u32 type
               (street lights first, then building lights)
 
@@ -44,6 +45,8 @@ GOAL = "effect/goal_light_yellow.igb"
 TEN_LINE = "effect/rival_line_blue.igb"
 SPOT = "car_lightspot_a3.tga"  # clCarSpotLight's image 1334
 SPARKS = ["car_spark03.tga", "car_spark04.tga"]  # clCarSparkManager's images 0x11a, 0x11b
+TRACK = "tirepattern.tga"  # clTireTrack's image 0x128
+BACKFIRE = "effect/car_backfire.igb"  # clBackFireManager's model: its three images
 
 
 def goal_texture(data, igb=GOAL):
@@ -117,7 +120,17 @@ def write_wpk(data, out_dir):
     texs.append(encode16(load_image_file(os.path.join(data, "sprite", SPOT)), 256))
     # the wall sparks (clCarSparkPrimitive: v along the streak)
     texs += [encode16(load_image_file(os.path.join(data, "sprite", n)), 256) for n in SPARKS]
-    names = SPRITES + ["goal_light01.tga", "10rival_line.dds", SPOT] + SPARKS
+    # the tyre marks (clTireTrack: u across the tread, v along the road)
+    texs.append(encode16(load_image_file(os.path.join(data, "sprite", TRACK)), 256))
+    # the backfire's images in the IGB's order (pack_backfire.py's BACKFIRE textures), red and
+    # blue swapped back as the goal's
+    f = IGB(os.path.join(data, BACKFIRE))
+    bf = []
+    for o in f.of_type("igImage"):
+        r, g, b, a = to_pil(o, f.ref(o[13 + f.slot_offset]).mem).split()
+        texs.append(encode16(Image.merge("RGBA", (b, g, r, a)), 512))
+        bf.append(os.path.basename(f.string(o[22 + f.slot_offset])))
+    names = SPRITES + ["goal_light01.tga", "10rival_line.dds", SPOT] + SPARKS + [TRACK] + bf
     tex_off = 32
     data_off = tex_off + 64 * len(texs)
     tbl, blob = bytearray(), bytearray()

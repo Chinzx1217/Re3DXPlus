@@ -41,7 +41,7 @@ int main(int argc, char **argv) {
     if (l->connected && l->me == l->host && l->n >= players && !said) {
       int all = 1;
       for (int i = 0; i < l->n; ++i) all &= l->player[i].status == 0;
-      if (all) { printf("host: starting with %d\n", l->n); net_start(ramp, km); said = 1; }
+      if (all) { printf("host: starting with %d\n", l->n); net_start(ramp, km, 0); said = 1; }
     }
     if (net_take_go(&go)) break;
     if (now() - t0 > 30) { puts("no race"); return 1; }

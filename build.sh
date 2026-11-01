@@ -82,6 +82,9 @@ if [ "$1" = "ipa" ]; then
   cp data/carconfig/*.txt "$APP/carconfig/"
   mkdir -p "$APP/rtmovie"
   cp -R "../Wangan Midnight Maximum Tune 3DX+ (Japan)/data/rtmovie/table" "../Wangan Midnight Maximum Tune 3DX+ (Japan)/data/rtmovie/trail" "$APP/rtmovie/"
+  # the story's in-race lines (Cut::clCutIn: data/cutin/jp)
+  mkdir -p "$APP/cutin/jp"
+  cp "../Wangan Midnight Maximum Tune 3DX+ (Japan)/data/cutin/jp/"*.txt "$APP/cutin/jp/"
   cp data/cars/* "$APP/cars/"
   # (and their baked ambient occlusion, tools/stage/bake_ao.c, as the car models' in data/cars)
   if [ -d data/chara ]; then mkdir -p "$APP/chara" && cp data/chara/*.wpk "$APP/chara/" && { cp data/chara/*.ao "$APP/chara/" 2>/dev/null || true; }; fi
@@ -163,6 +166,9 @@ if [ "$1" = "deploy" ]; then
     ssh ipad 'mkdir -p /var/mobile/Media/wmmt/rtmovie'
     scp -O -r "$RT/table" "$RT/trail" ipad:/var/mobile/Media/wmmt/rtmovie/
   fi
+  # the story's in-race lines (Cut::clCutIn); small, so always
+  ssh ipad 'mkdir -p /var/mobile/Media/wmmt/cutin/jp'
+  scp -O "../Wangan Midnight Maximum Tune 3DX+ (Japan)/data/cutin/jp/"*.txt ipad:/var/mobile/Media/wmmt/cutin/jp/
   # front-end sprites and animations (tools/menupack.py); 18 MB, so only when it changed
   if [ "$(ssh ipad 'md5sum /var/mobile/Media/wmmt/menu.bin 2>/dev/null' | cut -d' ' -f1)" != "$(md5 -q data/menu.bin)" ]; then
     scp -O data/menu.bin ipad:/var/mobile/Media/wmmt/

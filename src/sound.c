@@ -34,7 +34,7 @@ typedef struct {
 
 enum {
   S_ENG0, S_ENG1, S_ENG2, S_ENG3, S_MUF0, S_MUF1, S_MUF2, S_MUF3,
-  S_SLIP, S_WALL, S_CRASH1, S_CRASH4, S_VALVE, S_CURSOR, S_SELECT, S_CANCEL, S_START,
+  S_SLIP, S_WALL, S_TURBIN, S_AIR, S_CRASH1, S_CRASH4, S_VALVE, S_CURSOR, S_SELECT, S_CANCEL, S_START,
   S_TIME_COUNT, S_TIME_COUNT_LAST, S_TIME_EXTEND, S_FINISH, S_TURN, S_TURN2, S_TURN3, S_START321, S_START_GO, S_FINISH2, S_CUTIN2, S_TUNING_BAR,
   S_RESULT2, S_RESULT_PASS, S_APPROACH2, S_APPROACH3, S_TURN3_CUTIN,
   /* the story movies' shows' others (src/storydemo.h: snd_effect) */
@@ -44,12 +44,14 @@ enum {
    * (0x4a, 0x4b), the level 63 part's COMPLETE (0x48); the title select's titles coming in (0x30);
    * the versus stars' star landing (0x2c) and big star (0x38) */
   S_PARTS_EQUIP, S_TUNING, S_LEVELUP, S_JACK_UP, S_JACK_DOWN, S_TUNING1, S_TUNING2, S_PARTS_COMP, S_RANK, S_WIN, S_WIN_BIGSTAR,
+  /* the turbo's other two turbines (S_TURBIN by the power tune) and the backfire's two */
+  S_TURBIN2, S_TURBIN3, S_BACKFIRE1, S_BACKFIRE2,
   S_COUNT
 };
 /* every car type's engine and muffler loops (S_ENG0..S_MUF3 point into these) */
 static sample ENGINE_SAMPLES[SOUNDDB_NSETS][8];
 static const sounddb_set *engine_set = &SOUNDDB_SETS[0];
-static const char *EFFECT_FILES[S_COUNT - S_SLIP] = { "slip", "wall", "crash1", "crash4", "valb1",
+static const char *EFFECT_FILES[S_COUNT - S_SLIP] = { "slip", "wall", "turbin1", "air1", "crash1", "crash4", "valb1",
                                                       "cursor", "select", "cancel", "gamestart",
                                                       "ti_count", "ti_count2", "turning6", "finish1",
                                                       "turning", "turning2", "turning3", "start321", "start_go",
@@ -58,11 +60,12 @@ static const char *EFFECT_FILES[S_COUNT - S_SLIP] = { "slip", "wall", "crash1", 
                                                       "valb2", "valb3", "gyap", "door_open", "door_close",
                                                       "engine_start", "phone2", "rybal_intro", "parts_equip",
                                                       "tuning", "levelup", "jack_up", "jack_down", "tuning1",
-                                                      "tuning2", "parts_comp", "rank", "win", "win_bigstar" };
+                                                      "tuning2", "parts_comp", "rank", "win", "win_bigstar",
+                                                      "turbin2", "turbin3", "backfire1", "backfire2" };
 static sample SAMPLES[S_COUNT];
 
 /* Loop voices map 1:1 to the first ten samples; one-shots get their own pool. */
-#define N_LOOP (S_WALL + 1)
+#define N_LOOP (S_AIR + 1)
 #define N_SHOT 4
 
 typedef struct {
@@ -136,7 +139,20 @@ int snd_init(const char *data_dir) {
   return missing ? -1 : 0;
 }
 
+/* nsAudio's per car: the blow-off valve (clAudio::playLoop 4: the one-shot valb1..3 by the car's
+ * ECarType, table 0x931be80) and the turbine (clAudio::loadTunedLoop: loop 1 turbin1..3 by the
+ * power tune, at least 4 and at most 10: rows of 0x931bf40) */
+static const unsigned char VALB_BY_TYPE[48] = {
+  0, 1, 1, 0, 0, 0, 2, 1, 0, 0, 0, 2, 0, 0, 0, 0, 0, 1, 0, 0, 1, 2, 2, 0,
+  2, 0, 1, 0, 0, 1, 2, 0, 0, 2, 2, 0, 0, 2, 0, 0, 1, 2, 2, 0, 2, 2, 0, 0,
+};
+static int valb_sample = S_VALVE;
+
 void snd_set_car(unsigned type, int power) {
+  int v = type < 48 ? VALB_BY_TYPE[type] : 0;
+  valb_sample = v == 0 ? S_VALVE : v == 1 ? S_VALB2 : S_VALB3;
+  int p = power < 4 ? 4 : power > 10 ? 10 : power;
+  LOOPS[S_TURBIN].s = &SAMPLES[p <= 3 ? S_TURBIN : p <= 6 ? S_TURBIN2 : S_TURBIN3];
   const unsigned char *by_type = power >= 8 ? SOUNDDB_BY_TYPE : SOUNDDB_BY_TYPE_STOCK;
   int k = type < SOUNDDB_NTYPES ? by_type[type] : 0;
   /* the audio thread reads each voice's sample pointer once per mix */
@@ -191,7 +207,18 @@ static struct {
   int throttle_on;
   float valve_cooldown, shot_cooldown;
   float tick;
-} E = { 1000, 1000, 1000, 1000, 0, 0, 0, 0 };
+  int valb_on, backfire_on, gyap_on, backfire_k;
+  float valb_left; /* the valve's sound playing (Mc_Req: SNDIsPlayingValb) */
+} E = { 1000, 1000, 1000, 1000, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+
+/* nsAudio's pitch: a one-shot's frequency is its playback rate over the wave's rate (OneshotSndReq
+ * 0x853c0ac: freq / wave desc +4, 22050 for every race_se wave); a loop's is an offset from that rate
+ * (LoopSndCtrl 0x853bed8: (22050 + freq, clamped 0..179999) / 22050) */
+static float shot_pitch(float hz) { return hz > 0 ? hz / 22050.0f : 1.0f; }
+static float loop_pitch(float off) {
+  float f = 22050.0f + off;
+  return (f < 0 ? 0 : f > 179999.0f ? 179999.0f : f) / 22050.0f;
+}
 
 void snd_update(car_state *car, const car_input *in, float dt) {
   /* throttle state and gear changes drive the muffler level like the arcade */
@@ -199,12 +226,10 @@ void snd_update(car_state *car, const car_input *in, float dt) {
   if (on && !E.throttle_on) { E.accel_target = 5000; E.accel_step = 1000; }
   if (!on && E.throttle_on) {
     E.accel_target = 1000; E.accel_step = 1000;
-    if (E.rpm > 4500 && E.valve_cooldown <= 0) { play_shot(S_VALVE, 0.55f, 1.0f); E.valve_cooldown = 0.6f; }
   }
   E.throttle_on = on;
   if (car->shift_event > 0) {
     E.accel = fmaxf(0, E.accel_target - 5000); E.accel_step = 400;
-    if (on && E.rpm > 5000 && E.valve_cooldown <= 0) { play_shot(S_VALVE, 0.45f, 1.05f); E.valve_cooldown = 0.6f; }
   } else if (car->shift_event < 0) {
     E.accel = fminf(5000, E.accel_target + 5000); E.accel_step = 8;
   }
@@ -225,6 +250,27 @@ void snd_update(car_state *car, const car_input *in, float dt) {
     LOOPS[S_MUF0 + i].vol = 0.34f * band_gain(&engine_set->muffler_bands[i], E.rpm) * accel;
     LOOPS[S_MUF0 + i].pitch = band_pitch(&engine_set->muffler_bands[i], E.rpm);
   }
+
+  /* the arcade's own requests (car_se, yt::CSE::Mc_Req): the turbine and the wind as loops,
+   * the blow-off valve once it is not playing, the backfire (backfire1, 2 by turns) and the
+   * gyap as they come (the valve's sample by the car: snd_set_car; Allan 10-30: the R32's) */
+  const car_se *se = &car->se;
+  LOOPS[S_TURBIN].vol = se->turbo ? 0.73f * se->turbin_vol : 0.0f;
+  LOOPS[S_TURBIN].pitch = loop_pitch(se->turbin_hz);
+  LOOPS[S_AIR].vol = 0.73f * se->air_vol;
+  LOOPS[S_AIR].pitch = loop_pitch(se->air_hz);
+  E.valb_left -= dt;
+  if (se->valb && E.valb_left <= 0) {
+    play_shot(valb_sample, 0.73f * 0.73f * se->valb_vol, 1.0f);
+    E.valb_left = SAMPLES[valb_sample].rate > 0 ? (float)SAMPLES[valb_sample].n / (float)SAMPLES[valb_sample].rate : 0.5f;
+  }
+  if (se->backfire && !E.backfire_on) {
+    int id = (E.backfire_k++ & 1) ? S_BACKFIRE1 : S_BACKFIRE2;
+    play_shot(id, 0.73f * se->backfire_vol, shot_pitch(se->backfire_hz));
+  }
+  E.backfire_on = se->backfire;
+  if (se->gyap && !E.gyap_on) play_shot(S_GYAP, 0.73f * se->gyap_vol, shot_pitch(se->gyap_hz));
+  E.gyap_on = se->gyap;
 
   float kmh = car_kmh(car);
   LOOPS[S_SLIP].vol = 0.45f * car->slip;

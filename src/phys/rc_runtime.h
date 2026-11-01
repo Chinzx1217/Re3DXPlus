@@ -154,6 +154,11 @@ uint32_t rc_sscanf(uint32_t s, uint32_t fmt, uint32_t args);
 /* The realtime movies' files (data/rtmovie: YOURTMOVIE_CPP's table, yt::CSampler's trails, the
  * key cameras), from rc_config_dir too: fread and feof, fscanf with %d %f %s %c, and sprintf
  * for their names (%d with flags and width, %s, %f). */
+/* fopen with its mode and fprintf: yt::SCarryover's /tmp/ytCarryover.txt in memory (the rest as
+ * rc_fopen, read only); rc_carry_clear forgets it (a story episode started afresh) */
+uint32_t rc_fopen_mode(uint32_t path, uint32_t mode);
+uint32_t rc_fprintf(uint32_t f, uint32_t fmt, uint32_t args);
+void rc_carry_clear(void);
 uint32_t rc_fread(uint32_t buf, uint32_t size, uint32_t n, uint32_t f);
 uint32_t rc_feof(uint32_t f);
 uint32_t rc_fscanf(uint32_t f, uint32_t fmt, uint32_t args);
@@ -161,6 +166,27 @@ uint32_t rc_sprintf(uint32_t buf, uint32_t fmt, uint32_t args);
 
 /* std::wstring::compare(const wchar_t *): the titles' name checks (youTitle) */
 uint32_t rc_wcompare(uint32_t str, uint32_t s);
+
+/* Cut::clCutIn's (the in-race lines): its mode (clWorkSpace::isTenMode 1, isStoryMode 2, else 0),
+ * its clCutinDisp's setSpeak (place, the tag_SCatinDisp: eChar, expression, the line's anime, the
+ * flash's, its string; with the flash; x) and setEnd (place), and the strings: rc_utf8_line a
+ * one-character wide string holding the number (from 1) of the line Utf8ToUnicode was given
+ * since rc_cutin_lines was zeroed, rc_string a copy-on-write string of n characters of `size`
+ * bytes at s, and libc's wcslen, strtol and strtod. */
+extern int rc_cutin_mode;
+extern char rc_last_path[128]; /* the last file the arcade's code opened (its own path) */
+extern uint32_t rc_cutin_lines;
+extern void (*rc_on_cutin_speak)(uint32_t pos, uint32_t tag, int flash, int x);
+extern void (*rc_on_cutin_end)(uint32_t pos);
+static inline void rc_cutin_speak(uint32_t pos, uint32_t tag, uint32_t flash, uint32_t x) {
+  if (rc_on_cutin_speak) rc_on_cutin_speak(pos, tag, (int)flash, (int)x);
+}
+static inline void rc_cutin_end(uint32_t pos) { if (rc_on_cutin_end) rc_on_cutin_end(pos); }
+uint32_t rc_utf8_line(void);
+uint32_t rc_string(uint32_t s, uint32_t n, uint32_t size);
+uint32_t rc_wcslen(uint32_t s);
+uint32_t rc_strtol(uint32_t s, uint32_t end, uint32_t base);
+double rc_strtod(uint32_t s, uint32_t end);
 
 /* rand(): 12345 like the Unicorn reference until rc_rand_seed is set, then an LCG */
 extern uint32_t rc_rand_seed;

@@ -51,6 +51,7 @@ static void use_prog(void) {
 }
 
 void anm_view(float edge) { A.edge = edge; }
+float anm_edge(void) { return A.edge; }
 
 int anm_wide_drawn(void) { return A.edge > 0.0f && A.wide_clock == A.clock + 1; }
 

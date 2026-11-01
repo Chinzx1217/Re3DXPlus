@@ -2055,7 +2055,8 @@ void render_blend_pass(int on) {
   }
 }
 
-static void sprites(const mat4 *proj, const render_vertex *v, int n_quads, uint32_t tex, render_params *p, GLenum src) {
+static void sprites(const mat4 *proj, const render_vertex *v, int n_quads, uint32_t tex, render_params *p, GLenum src,
+                    GLenum dst) {
   static uint16_t idx[6 * RENDER_MAX_SPRITES];
   if (!idx[1])
     for (int i = 0; i < RENDER_MAX_SPRITES; ++i) {
@@ -2074,7 +2075,7 @@ static void sprites(const mat4 *proj, const render_vertex *v, int n_quads, uint3
   glUniform3f(pr->grade, 1.0f, 1.0f, 1.0f); /* (the lamps, sparks and mirror as they are) */
   glDisable(GL_CULL_FACE);
   glEnable(GL_BLEND);
-  glBlendFunc(src, GL_ONE);
+  glBlendFunc(src, dst);
   glDepthMask(GL_FALSE);
   glBindTexture(GL_TEXTURE_2D, tex);
   glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -2090,11 +2091,15 @@ static void sprites(const mat4 *proj, const render_vertex *v, int n_quads, uint3
 }
 
 void render_sprites(const mat4 *proj, const render_vertex *v, int n_quads, uint32_t tex, render_params *p) {
-  sprites(proj, v, n_quads, tex, p, GL_SRC_ALPHA);
+  sprites(proj, v, n_quads, tex, p, GL_SRC_ALPHA, GL_ONE);
+}
+
+void render_sprites_over(const mat4 *proj, const render_vertex *v, int n_quads, uint32_t tex, render_params *p) {
+  sprites(proj, v, n_quads, tex, p, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 }
 
 void render_sprites_by_colour(const mat4 *proj, const render_vertex *v, int n_quads, uint32_t tex, render_params *p) {
-  sprites(proj, v, n_quads, tex, p, GL_SRC_COLOR);
+  sprites(proj, v, n_quads, tex, p, GL_SRC_COLOR, GL_ONE);
 }
 
 static float box_distance(const float *lo, const float *hi, const float *p) {

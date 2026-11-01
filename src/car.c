@@ -42,6 +42,10 @@ void f_899b378(void); /* yt::CConfigLoader::GetStorySeries(file, int, ESeries), 
 void f_8982be8(void); /* yt::CSeq::Get2DInfoTenFight(S2DInfoTenFight *) */
 void f_89923e4(void); /* yt::GetTenFightRaceField(EStage, level), returning SConfigRaceField */
 /* YOURTMOVIE_CPP::clMovieSystem, the realtime movies (clRaceThread::initStory, race) */
+void f_85b15a8(void); /* Cut::clCutIn::clCutIn() */
+void f_8986878(void); /* yt::CSeq::End() */
+void f_85b16a4(void); /* Cut::clCutIn::Init(int, int) */
+void f_85b3754(void); /* Cut::clCutIn::Update() */
 void f_89fe784(void); /* clMovieSystem::clMovieSystem(unsigned int) */
 void f_89fd9d0(void); /* clMovieSystem::Init(eMovieType, ECarType x4), returning the movie's length in frames */
 void f_89fe890(void); /* clMovieSystem::UpDate(float frame) */
@@ -174,6 +178,7 @@ static struct {
   car_rival rival[CAR_RIVALS];
   /* car_set_versus: the link race's machines (vs_n others), ramp, km and seed */
   int vs_on, vs_pcb, vs_n, vs_ramp;
+  int ta_traffic; /* car_set_ta_traffic */
   int vs_race; /* the link's cars in the race now (0: not a versus) */
   float vs_km;
   unsigned vs_seed;
@@ -251,6 +256,8 @@ static void on_hook(uint32_t at) {
     W32(t + 0x18, (uint32_t)P.vs[k].spokes);
   }
 }
+
+void car_set_ta_traffic(int on) { P.ta_traffic = on != 0; }
 
 void car_set_rivals(const car_rival *rivals, int n) {
   P.n_rival = n < 0 ? 0 : n > CAR_RIVALS ? CAR_RIVALS : n;
@@ -346,7 +353,10 @@ int car_start(car_state *c, int course, int manual, const car_spec *spec) {
     WF(cfg + CFG_GOAL, COURSES[course].dist + 1000.0f * (float)atof(getenv("WMMT_TA_GOAL")));
 #endif
   W32(cfg + CFG_MODE, MODE_TIME_ATTACK);
-  W32(cfg + CFG_TA_TRAFFIC, 1u);
+  /* the time attack's traffic: off, as the arcade's (clThread_6_2_CourseSelect::run 0x8739b29:
+   * setTaOtherCar(1) only with a hidden button, input bit 0x40, held as the course is decided;
+   * Allan 10-30), on with the course select's TRAFFIC key (car_set_ta_traffic, Allan 10-31) */
+  W32(cfg + CFG_TA_TRAFFIC, P.ta_traffic ? 1u : 0u);
   if (P.has_rival) { /* the story mode's race against its rivals */
     W32(cfg + CFG_MODE, MODE_STORY);
     W32(cfg + CFG_LEVEL, (uint32_t)P.rival[0].level);
@@ -458,6 +468,24 @@ static void read_effect(car_effect *e) {
   e->spark = MF(P.eff + 0x68);
   memcpy(e->at, VA(P.eff + 0x6c), sizeof e->at);
   memcpy(e->dir, VA(P.eff + 0x78), sizeof e->dir);
+  for (uint32_t k = 0; k < 4; ++k) {
+    e->track[k] = MF(P.eff + 0x40 + 4 * k);
+    memcpy(e->wheel[k], VA(P.disp + 0x44 + 0x40 * k), sizeof e->wheel[k]);
+  }
+  e->backfire = M8(P.eff + 0x84) != 0;
+  float vx = MF(P.eff + 0x30), vy = MF(P.eff + 0x34), vz = MF(P.eff + 0x38);
+  e->speed = sqrtf(vx * vx + vy * vy + vz * vz);
+}
+
+/* yt::CInfoSEMc (car.h car_se) */
+static void read_se(car_se *s) {
+  uint32_t se = P.m + 0xb88u;
+  s->turbo = M8(se + 0x1c) != 0;
+  s->turbin_vol = MF(se + 0x74), s->turbin_hz = (float)(int32_t)M32(se + 0x78);
+  s->air_vol = MF(se + 0x7c), s->air_hz = (float)(int32_t)M32(se + 0x80);
+  s->valb = M8(se + 0xa8) != 0, s->valb_vol = MF(se + 0xac);
+  s->backfire = M8(se + 0xb0) != 0, s->backfire_vol = MF(se + 0xb4), s->backfire_hz = (float)(int32_t)M32(se + 0xb8);
+  s->gyap = M8(se + 0xbc) != 0, s->gyap_vol = MF(se + 0xc0), s->gyap_hz = (float)(int32_t)M32(se + 0xc4);
 }
 
 static void read_body(car_state *c) {
@@ -781,6 +809,60 @@ int car_movie_update(car_state *c, float frame) {
 
 void car_movie_end(void) { movie = 0; }
 
+/* Cut::clCutIn (0x14b4 bytes): the ctor, Init(select, loop), Update */
+#define CUTIN_SIZE 0x14b4u
+static uint32_t cutin;
+static car_cutin_cb cutin_cb;
+
+static void on_cutin_speak(uint32_t pos, uint32_t tag, int flash, int x) {
+  /* tag_SCatinDisp: eChar, expression, the line's anime, the flash's, the string (rc_utf8_line's) */
+  uint32_t str = M32(tag + 0x10);
+  int row = str ? (int)M32(str) - 1 : -1;
+  if (cutin_cb.speak && row >= 0)
+    cutin_cb.speak((int)pos, row, (int)M32(tag + 8), (int)M32(tag + 0xc), flash & 0xff, x);
+}
+
+static void on_cutin_end(uint32_t pos) {
+  if (cutin_cb.end) cutin_cb.end((int)pos);
+}
+
+const char *car_cutin_start(int select, int loop, const car_cutin_cb *cb) {
+  cutin = 0;
+  if (!P.ready || select < 0) return NULL;
+  cutin_cb = *cb;
+  rc_on_cutin_speak = on_cutin_speak;
+  rc_on_cutin_end = on_cutin_end;
+  rc_cutin_mode = 2;
+  rc_cutin_lines = 0;
+  rc_last_path[0] = 0;
+  uint32_t c = rc_alloc(CUTIN_SIZE);
+  call(f_85b15a8, 1, c);
+  /* Init sets up only before the race's CSeq::Init (GetCutInInfoPt still none); its mode
+   * (+0: 2 the story's) back to 0 when the file could not be read */
+  uint8_t on = M8(CUTIN_ON);
+  *(uint8_t *)VA(CUTIN_ON) = 0;
+  call(f_85b16a4, 3, c, (uint32_t)select, (uint32_t)loop);
+  *(uint8_t *)VA(CUTIN_ON) = on;
+  if (M32(c) != 2 || !rc_last_path[0]) return NULL;
+  cutin = c;
+  const char *slash = strrchr(rc_last_path, '/');
+  return slash ? slash + 1 : rc_last_path;
+}
+
+void car_cutin_update(void) {
+  if (cutin && P.ready) call(f_85b3754, 1, cutin);
+}
+
+void car_cutin_stop(void) { cutin = 0; }
+
+/* yt::CSeq::End (clRaceThread::finiStory's): among the rest it saves the race's yt::SCarryover
+ * (rc_runtime keeps /tmp/ytCarryover.txt in memory), which the next race of an episode whose
+ * series carries over (ytConfigStory's Suspend_Carryover ... true: the B races) starts from */
+void car_story_end(int first) {
+  if (first) rc_carry_clear();
+  else if (P.ready && P.has_rival) call(f_8986878, 0);
+}
+
 /* The top bar's reset key (a port extra: the arcade has no such key): the car put back on the
  * road where it is, facing the course in the start's lane, the way CSeq::Exec's 10-in-a-row
  * warp places it (0x898644c: yt::CSlit::GetFirstPoint at an odometer reading and a lateral
@@ -810,6 +892,10 @@ void car_reset(car_state *c) {
 
 static void first_frame(car_state *c) {
   memset(c, 0, sizeof *c);
+  /* the tyres' radii (STireDimension's, mm) in display units: the player's, then the rivals' */
+  c->tyre_radius[0] = P.spec.tyres[1] * 0.01f;
+  for (int i = 0; i < CAR_RIVALS; ++i)
+    c->tyre_radius[1 + i] = (P.vs_on && i < P.vs_n ? P.vs[i].tyres[1] : i < P.n_rival ? P.rival[i].tyres[1] : 0.0f) * 0.01f;
   /* the rolling start is at about 120 km/h: second gear */
   P.lever = 1;
   read_body(c);
@@ -890,6 +976,7 @@ void car_update(car_state *c, const car_input *in) {
   read_traffic(c);
   read_rival(c);
   read_race(&c->race);
+  read_se(&c->se);
   /* velocity from the frame's displacement (display units per frame -> m/s) */
   float v[3] = { (c->pos[0] - prev[0]) * 6.0f, (c->pos[1] - prev[1]) * 6.0f, (c->pos[2] - prev[2]) * 6.0f };
   const float *M = c->body;

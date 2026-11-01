@@ -645,7 +645,7 @@ static VkFormatProperties fmt_props(VkFormat f) {
 }
 static int fmt_has(VkFormat f, VkFormatFeatureFlags want) { return (fmt_props(f).optimalTilingFeatures & want) == want; }
 
-enum { CONV_COPY, CONV_RGB_RGBA, CONV_5551_1555, CONV_RAW };
+enum { CONV_COPY, CONV_RGB_RGBA, CONV_5551_1555, CONV_565_RGBA, CONV_RAW };
 typedef struct {
   VkFormat fmt;
   VkComponentMapping swz;
@@ -664,7 +664,9 @@ static int tex_format(GLenum ifmt, GLenum fmt, GLenum type, tfmt *o) {
   switch (ifmt) {
   case GL_RGB:
     if (type == GL_UNSIGNED_SHORT_5_6_5) {
-      o->fmt = VK_FORMAT_R5G6B5_UNORM_PACK16, o->src_bpp = o->dst_bpp = 2;
+      /* (as RGBA8: the Mi 6's Adreno sampled R5G6B5 with red and blue swapped, and the maps'
+       * reflection cubes, the only 5_6_5 ones, turned the tunnels' orange blue; Allan 10-30) */
+      o->fmt = VK_FORMAT_R8G8B8A8_UNORM, o->conv = CONV_565_RGBA, o->src_bpp = 2, o->dst_bpp = 4;
     } else if (type == GL_UNSIGNED_BYTE) {
       o->fmt = VK_FORMAT_R8G8B8A8_UNORM, o->conv = CONV_RGB_RGBA, o->src_bpp = 3, o->dst_bpp = 4;
       o->swz = SW(IDENTITY, IDENTITY, IDENTITY, ONE);
@@ -966,6 +968,13 @@ static void image_upload(vimg *im, int level, int face, int w, int h, const tfmt
         const uint16_t *s16 = (const uint16_t *)src;
         uint16_t *d16 = (uint16_t *)d;
         for (int x = 0; x < w; ++x) d16[x] = (uint16_t)((s16[x] >> 1) | ((s16[x] & 1u) << 15));
+      } else if (f->conv == CONV_565_RGBA) {
+        const uint16_t *s16 = (const uint16_t *)src;
+        for (int x = 0; x < w; ++x) {
+          unsigned v = s16[x], r = v >> 11, g = (v >> 5) & 63u, b = v & 31u;
+          d[4 * x] = (uint8_t)((r << 3) | (r >> 2)), d[4 * x + 1] = (uint8_t)((g << 2) | (g >> 4));
+          d[4 * x + 2] = (uint8_t)((b << 3) | (b >> 2)), d[4 * x + 3] = 255;
+        }
       }
     }
   }

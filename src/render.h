@@ -354,5 +354,7 @@ typedef struct {
 void render_sprites(const mat4 *proj, const render_vertex *v, int n_quads, uint32_t tex, render_params *p);
 /* the same added by their own colour (glBlendFunc(GL_SRC_COLOR, GL_ONE): clCarSpotLight's) */
 void render_sprites_by_colour(const mat4 *proj, const render_vertex *v, int n_quads, uint32_t tex, render_params *p);
+/* the same blended over what is there by their alpha (the tyre marks) */
+void render_sprites_over(const mat4 *proj, const render_vertex *v, int n_quads, uint32_t tex, render_params *p);
 
 #endif

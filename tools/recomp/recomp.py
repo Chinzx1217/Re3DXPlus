@@ -61,8 +61,10 @@ DEMANGLED = dict(zip(FUNC_ADDRS, _dem.split("\n")))
 # YOURTMOVIE_CPP (with FEQuat*): the story's realtime movies, their cars driven by yt::CGhost from the
 # recorded trails (yt::CSampler) and their key cameras; youTitle: the titles' rules (GetTitleList),
 # fed the run's yt::CTitle log
+# Cut::clCutIn: the story's and the 10-in-a-row's in-race lines (data/cutin), its clCutinDisp the
+# port's (rc_cutin_speak, rc_cutin_end)
 LOGIC = ("yt::", "geo::", "Gap::Math::", "GetE", "SConfig", "std::", "__gnu_cxx::", "operator",
-         "YOURTMOVIE_CPP::", "FEQuat", "youTitle::")
+         "YOURTMOVIE_CPP::", "FEQuat", "youTitle::", "Cut::clCutIn::")
 NOT_LOGIC = ("yt::CSE::", "yt::CTenSE", "yt::CMapRunner",
              "yt::CFloatEdit", "yt::Mes", "yt::CHitLogger", "yt::CWallLogger", "yt::Disp_",
              "yt::Output_", "yt::Print_")
@@ -78,6 +80,15 @@ STUB_IMPL = {
     "_Z13GetSendPacketv": "eax = rc_link_tx;",
     "_Z16GetReceivePacketi": "eax = rc_link_rx_packet(M32(esp + 4));",
     "_Z4Sendv": "rc_link_send(); eax = 0;",
+    # Cut::clCutIn's mode (rc_cutin_mode: 1 the 10-in-a-row, 2 the story) and its clCutinDisp
+    "_ZNK11clWorkSpace11isStoryModeEv": "eax = rc_cutin_mode == 2;",
+    "_ZNK11clWorkSpace9isTenModeEv": "eax = rc_cutin_mode == 1;",
+    "_ZN11clCutinDisp8setSpeakEN11nsCutinDisp4ePosENS0_14tag_SCatinDispEbi":
+        "rc_cutin_speak(M32(esp + 8), M32(esp + 12), M32(esp + 16) & 0xff, M32(esp + 20)); eax = 0;",
+    "_ZN11clCutinDisp6setEndEN11nsCutinDisp4ePosE": "rc_cutin_end(M32(esp + 8)); eax = 0;",
+    # the line's text: a wide string standing for the file's line (rc_utf8_line); it returns the
+    # string in the caller's slot and pops that pointer
+    "_Z13Utf8ToUnicodeRKSs": "eax = M32(esp + 4); W32(eax, rc_utf8_line()); esp += 4;",
 }
 # instructions before which the port supplies display-side data: rc_hook(address)
 HOOKS = {
@@ -149,19 +160,32 @@ PLT_IMPL = {  # name -> C body using the stack args at esp (no return address pu
     # rc_strcmp: the patched iOS SDK has no plain strcmp for armv7
     "strcmp": "eax = (uint32_t)rc_strcmp((const char *)VA(A32(0)), (const char *)VA(A32(1)));",
     # yt::CConfigLoader's files (data/carconfig), from rc_config_dir
-    "fopen": "eax = rc_fopen(A32(0));", "fclose": "rc_fclose(A32(0)); eax = 0;",
+    "fopen": "eax = rc_fopen_mode(A32(0), A32(1));", "fclose": "rc_fclose(A32(0)); eax = 0;",
     "fgets": "eax = rc_fgets(A32(0), A32(1), A32(2));", "sscanf": "eax = rc_sscanf(A32(0), A32(1), esp + 8);",
     "strstr": "eax = rc_strstr(A32(0), A32(1));", "strcat": "eax = rc_strcat(A32(0), A32(1));",
     # the realtime movies' tables and trails (data/rtmovie); their editor's saves are not needed
     "fread": "eax = rc_fread(A32(0), A32(1), A32(2), A32(3));", "feof": "eax = rc_feof(A32(0));",
     "fscanf": "eax = rc_fscanf(A32(0), A32(1), esp + 8);",
     "sprintf": "eax = rc_sprintf(A32(0), A32(1), esp + 8);",
-    "fprintf": "eax = 0;", "fwrite": "eax = 0;",
+    # (yt::SCarryover's file, /tmp/ytCarryover.txt, kept in memory: rc_fopen_mode)
+    "fprintf": "eax = rc_fprintf(A32(0), A32(1), esp + 8);", "fwrite": "eax = 0;",
     "printf": "eax = 0;", "puts": "eax = 0;",
     "__cxa_guard_acquire": "eax = *(uint8_t *)VA(A32(0)) ? 0 : 1;",
     "__cxa_guard_release": "*(uint8_t *)VA(A32(0)) = 1;",
     # youTitle's checks of the card's name (std::wstring::compare(const wchar_t *))
     "_ZNKSbIwSt11char_traitsIwESaIwEE7compareEPKw": "eax = rc_wcompare(A32(0), A32(1));",
+    # Cut::clCutIn's strings (libstdc++'s copy-on-write ones: the pointer to the characters, the
+    # length, capacity and count before them); shared, never freed (the heap goes with the race)
+    "_ZNSbIwSt11char_traitsIwESaIwEEC1ERKS2_": "W32(A32(0), M32(A32(1)));",
+    "_ZNSbIwSt11char_traitsIwESaIwEE6assignERKS2_": "W32(A32(0), M32(A32(1))); eax = A32(0);",
+    "_ZNSbIwSt11char_traitsIwESaIwEE6assignEPKwj": "W32(A32(0), rc_string(A32(1), A32(2), 4)); eax = A32(0);",
+    "_ZNSbIwSt11char_traitsIwESaIwEE4_Rep10_M_destroyERKS1_": "",
+    "_ZNSsC1EPKcRKSaIcE": "W32(A32(0), rc_string(A32(1), (uint32_t)strlen((const char *)VA(A32(1))), 1));",
+    "_ZNSs4_Rep10_M_destroyERKSaIcE": "",
+    "_ZN9__gnu_cxx18__exchange_and_addEPVii": "eax = M32(A32(0)); W32(A32(0), eax + A32(1));",
+    "wcslen": "eax = rc_wcslen(A32(0));",
+    "__strtol_internal": "eax = rc_strtol(A32(0), A32(1), A32(2));",
+    "__strtod_internal": "fpush(rc_strtod(A32(0), A32(1)));",
 }
 
 GPRS = ("eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi")
