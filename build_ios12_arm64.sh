@@ -31,17 +31,22 @@ ffmpeg -hide_banner -decoders 2>/dev/null | grep -qi bink || {
 }
 
 SDK="${IOS_SDK:-}"
+THEOS_ROOT="${THEOS:-$HOME/theos}"
 if [ -z "$SDK" ]; then
   for candidate in \
-    "$HOME/theos/sdks/iPhoneOS9.3-armv7.sdk" \
-    "$HOME/theos/sdks/iPhoneOS12.4.sdk" \
-    "$HOME/theos/sdks/iPhoneOS.sdk"; do
+    "$THEOS_ROOT/sdks/iPhoneOS12.4.sdk" \
+    "$THEOS_ROOT/sdks/iPhoneOS9.3.sdk" \
+    "$THEOS_ROOT/sdks/iPhoneOS.sdk"; do
     if [ -d "$candidate" ]; then SDK="$candidate"; break; fi
   done
 fi
-[ -n "$SDK" ] && [ -d "$SDK" ] || {
-  echo "No iPhoneOS SDK found. clang alone is not enough; set IOS_SDK to an existing iPhoneOS*.sdk folder." >&2
-  echo "Expected by default: ~/theos/sdks/iPhoneOS9.3-armv7.sdk" >&2
+if [ -z "$SDK" ]; then
+  echo "iOS SDK not found; installing patched iPhoneOS 12.4 SDK..."
+  sh ./install_ios_sdk.sh
+  SDK="$THEOS_ROOT/sdks/iPhoneOS12.4.sdk"
+fi
+[ -d "$SDK" ] || {
+  echo "iOS SDK not found: $SDK" >&2
   exit 1;
 }
 [ -f "$SDK/System/Library/Frameworks/UIKit.framework/Headers/UIKit.h" ] || {
