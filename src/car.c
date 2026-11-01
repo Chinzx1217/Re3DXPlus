@@ -754,6 +754,11 @@ float car_movie_start(car_state *c, int id, const car_spec *player, const car_ri
   call(f_89fd9d0, 6, ms, (uint32_t)id, P.spec.type, rival_type[0], rival_type[1], rival_type[2]);
   float len = (float)ST(0);
   fpop();
+  /* Do not retain an invalid movie system when its trails are missing. */
+  if (!(len > 1.0f)) {
+    movie = 0;
+    return 0.0f;
+  }
   call(f_89a2584, 1, fbits(1.0f / 60.0f));
   call(f_89a2548, 1, fbits(1.0f));
   P.m = M32(MACHINE_PTR);
