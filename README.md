@@ -79,7 +79,7 @@ iOS 的系统代码是 Objective-C，能和 C 一起编译，所以直接放在 
 - Python 3，以及 `pip install capstone unicorn pillow`
 - `c++filt`（binutils）
 - ffmpeg（需带 Bink 解码器，用于影片）
-- iOS：macOS + Xcode（clang）、[theos](https://theos.dev) 里打过补丁的 `iPhoneOS9.3-armv7.sdk`（放在 `~/theos/sdks/`）、`ldid`
+- iOS：macOS、可用的 `clang`、`ldid`；ARM64 构建脚本会在缺少 SDK 时自动安装打过补丁的 iOS 12.4 SDK 到 `~/theos/sdks/`
 - Android：Android SDK（build-tools、platform）和 NDK，JDK（Android Studio 自带的即可）
 
 ## 第一步：生成代码表和物理
