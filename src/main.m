@@ -68,7 +68,7 @@ static NSString *const MOVIES[3] = { @"intro.mp4", @"playdemo.mp4", @"tutorial.m
 }
 
 - (void)ended:(NSNotification *)n {
-  [target performSelector:done];
+  if (target && done && [target respondsToSelector:done]) [target performSelector:done];
 }
 
 - (void)pause:(BOOL)p {
