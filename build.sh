@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build WMMT.app (armv7, iOS 6.0+) with Xcode 16 clang and the patched iPhoneOS 9.3 SDK,
+# Build WMMT.app for ARM64 iPad (iOS 9.3+) with clang and the patched iPhoneOS 12.4 SDK,
 # fake-signed with ldid. Usage: ./build.sh [deploy|ipa]; PHONE=1 ./build.sh ipa builds the
 # iPhone 4's (iPhone family, its own bundle id and icons; main.m/app.c fit the game to its 3:2).
 #   deploy: copy the app (and data, first time) to the iPad over `ssh ipad` (needs iproxy 2222:22).
@@ -7,14 +7,19 @@
 #        the player's files then go to the app's Documents, see main.m SaveDir).
 set -e
 cd "$(dirname "$0")"
-ARCH="${IOS_ARCH:-armv7}"
-MIN_IOS="${IOS_MIN_VERSION:-6.0}"
-SDK="${IOS_SDK:-$HOME/theos/sdks/iPhoneOS9.3-armv7.sdk}"
+ARCH="${IOS_ARCH:-arm64}"
+MIN_IOS="${IOS_MIN_VERSION:-9.3}"
+SDK="${IOS_SDK:-${THEOS:-$HOME/theos}/sdks/iPhoneOS12.4.sdk}"
 CLANG="${IOS_CLANG:-clang}"
 APP=build/WMMT.app
 PHYS_OBJ="build/obj/phys_rc_${ARCH}.o"
 command -v "$CLANG" >/dev/null 2>&1 || { echo "clang not found: $CLANG" >&2; exit 1; }
-[ -d "$SDK" ] || { echo "iOS SDK not found: $SDK (set IOS_SDK to your iPhoneOS SDK folder)" >&2; exit 1; }
+if [ ! -d "$SDK" ] && [ -z "${IOS_SDK:-}" ]; then
+  for candidate in "${THEOS:-$HOME/theos}/sdks/iPhoneOS9.3.sdk" "${THEOS:-$HOME/theos}/sdks/iPhoneOS.sdk"; do
+    if [ -d "$candidate" ]; then SDK="$candidate"; break; fi
+  done
+fi
+[ -d "$SDK" ] || { echo "iOS SDK not found: $SDK (run sh install_ios_sdk.sh or set IOS_SDK)" >&2; exit 1; }
 command -v ldid >/dev/null 2>&1 || { echo "ldid not found; install ldid before building the IPA" >&2; exit 1; }
 rm -rf "$APP" && mkdir -p "$APP" build/obj
 # Keep separate physics objects for armv7 and arm64; never link an object from another architecture.
