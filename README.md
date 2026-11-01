@@ -117,16 +117,15 @@ Android 想用高清贴图时，可以用 Real-ESRGAN 放大地图贴图（`tool
 
 `tools/make_icon.py` 从 `data/icon/logo_allan2.jpg`（518×386）生成 iOS 6 风格的图标。仓库里没有附带图片，请放一张你自己有权使用的图片在这个位置。
 
-## 构建 iOS（iPad 3 / iPhone 4）
+## 构建 iOS（iPad mini 2 ARM64）
 
 ```sh
-./build.sh ipa            # iPad：build/WMMT3DX-1.0.ipa（数据打进 app 里）
-PHONE=1 ./build.sh ipa    # iPhone 4：build/WMMT3DX-1.0-iPhone4.ipa
-./build.sh deploy         # 通过 ssh 主机别名 `ipad` 直接部署到已越狱、装了 OpenSSH 的 iPad
+sh build_ios12_arm64.sh  # 自动安装 iOS 12.4 SDK、生成素材并打包 ARM64 IPA
 ```
 
-ipa 是 ldid 伪签名，需要越狱设备装 AppSync 才能安装。`deploy` 需要你在 `~/.ssh/config` 里配好名为 `ipad` 的主机（例如 `iproxy 2222:22` 走 USB）。
+此分支以 iPad mini 2（A7 / ARM64）为目标。构建脚本在缺少 SDK 时，会从 theos/sdks 官方发布页安装打过补丁的 `iPhoneOS12.4.sdk` 到 `~/theos/sdks/`。最低系统版本默认为 iOS 9.3，可在 iOS 12.5.8 上运行。原版街机数据必须由用户自行准备，且不会上传到 GitHub。
 
+IPA 使用 `ldid` 伪签名；越狱设备需要安装 AppSync 才能安装。
 ## 构建 Android
 
 ```sh
