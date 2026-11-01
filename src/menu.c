@@ -8440,8 +8440,7 @@ static void step(menu_state *m) {
     return;
   }
   if (m->screen == MENU_INFO) {
-    /* Only BACK leaves the information page; left/right taps must not dismiss it. */
-    if (back) {
+    if (back || tap) {
       snd_menu(SND_CANCEL);
       go(m, MENU_SAVE);
     }
