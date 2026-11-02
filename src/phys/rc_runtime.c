@@ -72,7 +72,8 @@ uint32_t rc_fopen(uint32_t path) {
   for (uint32_t k = 0; k < 4; ++k)
     if (!rc_files[k]) {
       rc_files[k] = fopen(full, "rb");
-      if (getenv("RC_TRACE_FILES")) fprintf(stderr, "rc_fopen %s: %s\n", full, rc_files[k] ? "ok" : "missing");
+      if (getenv("RC_TRACE_FILES") || !strncmp(p, "data/rtmovie/", 13))
+        fprintf(stderr, "rc_fopen %s: %s\n", full, rc_files[k] ? "ok" : "missing");
       return rc_files[k] ? k + 1 : 0;
     }
   return 0;
