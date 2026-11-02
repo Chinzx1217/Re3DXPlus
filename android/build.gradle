@@ -64,7 +64,7 @@ android {
 // Use the repository's existing artwork as the launcher icon; no new artwork is generated.
 def originalLogoResDir = layout.buildDirectory.dir("generated/res/originalLogo")
 tasks.register("copyOriginalLauncherLogo", Copy) {
-    from("$rootDir/../docs/logo.png")
+    from("$rootDir/docs/logo.png")
     into(originalLogoResDir.map { it.dir("drawable-nodpi") })
     rename { "ic_launcher.png" }
 }
