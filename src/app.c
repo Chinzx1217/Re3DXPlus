@@ -2609,7 +2609,26 @@ static void effects_reset(void) {
     spark_backfire_car(1 + i, i < G.n_rival ? G.rival_pack[i] : -1, G.vs_race ? G.rival_dress[i].aero : 0);
 }
 
+static void story_cut_start(void);
+
 static void movie_open(int select, int race, const int *rows, int n_rows) {
+#ifdef __ANDROID__
+  /* The Android 6 / GLES2 port can run the race simulation, but the arcade realtime
+   * movie runtime is not reliable on this target. Start each story race directly rather
+   * than entering clMovieSystem::Init (which otherwise terminates the app on device).
+   * Keep the original movie path for the story ending. */
+  if (G.menu.ending != 2) {
+    fprintf(stderr, "story movie: skipped on Android; starting race directly (select %d race %d)\n",
+            select, race);
+    car_cutin_stop();
+    hud_story_cut_file(NULL);
+    car_set_rivals(G.race_rv, G.race_nrv);
+    car_start(&G.car, G.race_course, G.menu.manual, &G.race_spec);
+    story_cut_start();
+    effects_reset();
+    return;
+  }
+#endif
   const storymovie *mv = NULL;
   for (int i = 0; i < STORYMOVIE_N && !mv; ++i)
     if (STORYMOVIE[i].select == select && STORYMOVIE[i].race == race) mv = &STORYMOVIE[i];
