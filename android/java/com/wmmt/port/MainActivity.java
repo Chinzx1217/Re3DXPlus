@@ -1,12 +1,15 @@
 package com.wmmt.port;
 
+import android.Manifest;
 import android.app.Activity;
+import android.content.pm.PackageManager;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.media.MediaPlayer;
 import android.os.Bundle;
+import android.os.Environment;
 import android.view.MotionEvent;
 import android.view.Surface;
 import android.view.SurfaceHolder;
@@ -18,11 +21,9 @@ import android.widget.VideoView;
 
 import java.io.File;
 
-/* The Android side of the port, as main.m is the iOS one: the game draws on a SurfaceView
- * from its own thread (src/main_android.c), the attract movies play in a VideoView over it,
- * the BGM in a MediaPlayer (both decode the AAC/H.264 in hardware); touches, the gravity for
- * steering by tilt and the lifecycle go down to the native side. */
 public class MainActivity extends Activity implements SurfaceHolder.Callback, SensorEventListener {
+  private static final int STORAGE_PERMISSION_REQUEST = 1001;
+
   static { System.loadLibrary("wmmt"); }
 
   static native void nativeStart(MainActivity a, String dataDir, String saveDir);
@@ -40,30 +41,93 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Se
   private VideoView movie;
   private MediaPlayer bgm;
   private String dataDir;
+  private String saveDir;
   private SensorManager sensors;
   private Sensor gravity;
+  private Surface pendingSurface;
+  private boolean nativeStarted;
 
   @Override protected void onCreate(Bundle b) {
     super.onCreate(b);
     getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON | WindowManager.LayoutParams.FLAG_FULLSCREEN);
     if (android.os.Build.VERSION.SDK_INT >= 28)
       getWindow().getAttributes().layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+
     root = new FrameLayout(this);
     game = new SurfaceView(this);
     game.getHolder().addCallback(this);
-    game.setOnTouchListener((v, e) -> { touch(e); return true; });
+    game.setOnTouchListener((v, e) -> { if (nativeStarted) touch(e); return true; });
     root.addView(game);
     setContentView(root);
     hideBars();
-    /* the data as adb pushes it: /sdcard/Android/data/com.wmmt.port/files/wmmt (needs no
-     * storage permission); the player's files next to it */
-    File ext = getExternalFilesDir(null);
-    File data = new File(ext, "wmmt");
-    data.mkdirs();
-    dataDir = data.getAbsolutePath();
+
     sensors = (SensorManager) getSystemService(SENSOR_SERVICE);
     gravity = sensors.getDefaultSensor(Sensor.TYPE_GRAVITY);
-    nativeStart(this, dataDir, dataDir);
+
+    if (checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+      requestPermissions(new String[] { Manifest.permission.READ_EXTERNAL_STORAGE }, STORAGE_PERMISSION_REQUEST);
+    } else {
+      startGameWithStorage();
+    }
+  }
+
+  @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+    super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+    if (requestCode != STORAGE_PERMISSION_REQUEST) return;
+    if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+      startGameWithStorage();
+    } else {
+      fail("Storage permission is required to read the game data folder. Allow Files and media access, then reopen the game.");
+    }
+  }
+
+  private File volumeRoot(File appSpecificDir) {
+    File dir = appSpecificDir;
+    for (int i = 0; i < 4 && dir != null; ++i) dir = dir.getParentFile();
+    return dir;
+  }
+
+  private File findGameData() {
+    File[] appDirs = getExternalFilesDirs(null);
+    if (appDirs != null) {
+      for (File appDir : appDirs) {
+        if (appDir == null || !Environment.isExternalStorageRemovable(appDir)) continue;
+        File volumeRoot = volumeRoot(appDir);
+        if (volumeRoot == null) continue;
+        File candidate = new File(volumeRoot, "data");
+        if (candidate.exists() && candidate.isDirectory()) {
+          if (candidate.canRead() && new File(candidate, "menu.bin").isFile()) return candidate;
+          fail("The SD card contains a data folder, but it cannot be read or menu.bin is missing: " + candidate.getAbsolutePath());
+          return null;
+        }
+      }
+    }
+
+    File primaryRoot = Environment.getExternalStorageDirectory();
+    File internalData = new File(primaryRoot, "data");
+    if (internalData.isDirectory() && internalData.canRead() && new File(internalData, "menu.bin").isFile())
+      return internalData;
+
+    fail("Game data was not found. Put the complete game folder at SD card root/data first. If it is not there, put it at internal storage root/data. The folder must contain menu.bin.");
+    return null;
+  }
+
+  private void startGameWithStorage() {
+    if (nativeStarted) return;
+    File data = findGameData();
+    if (data == null) return;
+
+    File save = new File(getExternalFilesDir(null), "save");
+    if (!save.exists() && !save.mkdirs()) {
+      fail("Cannot create the game's save folder: " + save.getAbsolutePath());
+      return;
+    }
+
+    dataDir = data.getAbsolutePath();
+    saveDir = save.getAbsolutePath();
+    nativeStart(this, dataDir, saveDir);
+    nativeStarted = true;
+    if (pendingSurface != null) nativeSurface(pendingSurface, root.getWidth(), root.getHeight());
   }
 
   private void hideBars() {
@@ -95,13 +159,21 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Se
   }
 
   @Override public void surfaceCreated(SurfaceHolder h) {}
-  @Override public void surfaceChanged(SurfaceHolder h, int fmt, int w, int ht) { nativeSurface(h.getSurface(), w, ht); }
-  @Override public void surfaceDestroyed(SurfaceHolder h) { nativeSurface(null, 0, 0); }
+
+  @Override public void surfaceChanged(SurfaceHolder h, int fmt, int w, int ht) {
+    pendingSurface = h.getSurface();
+    if (nativeStarted) nativeSurface(pendingSurface, w, ht);
+  }
+
+  @Override public void surfaceDestroyed(SurfaceHolder h) {
+    pendingSurface = null;
+    if (nativeStarted) nativeSurface(null, 0, 0);
+  }
 
   @Override protected void onPause() {
     super.onPause();
-    nativePause(true);
-    sensors.unregisterListener(this);
+    if (nativeStarted) nativePause(true);
+    if (sensors != null) sensors.unregisterListener(this);
     if (bgm != null) bgm.pause();
     if (movie != null) movie.pause();
   }
@@ -109,7 +181,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Se
   @Override protected void onResume() {
     super.onResume();
     hideBars();
-    nativePause(false);
+    if (nativeStarted) nativePause(false);
     if (gravity != null) sensors.registerListener(this, gravity, SensorManager.SENSOR_DELAY_GAME);
     if (bgm != null) bgm.start();
     if (movie != null) movie.start();
@@ -117,25 +189,20 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Se
 
   @Override public void onTrimMemory(int level) {
     super.onTrimMemory(level);
-    if (level >= TRIM_MEMORY_RUNNING_LOW) nativeMemoryWarning();
+    if (nativeStarted && level >= TRIM_MEMORY_RUNNING_LOW) nativeMemoryWarning();
   }
 
-  /* the phone turned like a wheel (main.m's tilt): gravity's angle in the screen's plane from
-   * its down, clockwise positive; nothing when it lies flat. In landscape the screen's right is
-   * the sensor's -y (rotation 90) or +y (270) and its down the sensor's +x or -x. */
   @Override public void onSensorChanged(SensorEvent e) {
-    if (!nativeWantsTilt()) return;
+    if (!nativeStarted || !nativeWantsTilt()) return;
     float gx = e.values[0], gy = e.values[1];
     int rot = getWindowManager().getDefaultDisplay().getRotation();
     float right = rot == Surface.ROTATION_270 ? gy : -gy, down = rot == Surface.ROTATION_270 ? -gx : gx;
     float g2 = right * right + down * down;
     nativeTilt(g2 < 0.04f * 96.2f ? 0.0f : (float) Math.atan2(-right, down));
   }
+
   @Override public void onAccuracyChanged(Sensor s, int a) {}
 
-  /* ---- called by the game's thread ---- */
-
-  /* the attract movie (data dir's intro.mp4 etc.), or none for null */
   void showMovie(final String name) {
     runOnUiThread(() -> {
       if (movie != null) {
@@ -154,16 +221,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Se
       movie.setVideoPath(f.getAbsolutePath());
       movie.setOnCompletionListener(mp -> nativeMovieDone());
       movie.setOnErrorListener((mp, what, extra) -> { nativeMovieDone(); return true; });
-      /* a tap on the movie is the arcade's "press the gas" */
       movie.setOnTouchListener((v, e) -> {
         if (e.getActionMasked() == MotionEvent.ACTION_DOWN) nativePressStart();
         return true;
       });
       FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,
           FrameLayout.LayoutParams.MATCH_PARENT, android.view.Gravity.CENTER);
-      /* the intro's picture is letterboxed in its 4:3 (640x326 at y 76): on a wider screen it
-       * goes the screen's width, its black bands off the top and bottom; playdemo and tutorial
-       * fill their 4:3 and stay so */
       int w = root.getWidth(), h = root.getHeight();
       if (name.equals("intro.mp4") && w * 3 > h * 4) {
         lp.width = w;
@@ -174,7 +237,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Se
     });
   }
 
-  /* data dir's sound/bgm/<name>.m4a over and over, or nothing for null */
   void playBgm(final String name) {
     runOnUiThread(() -> {
       if (bgm != null) {
@@ -196,7 +258,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Se
     });
   }
 
-  /* the BGM's level (the story ending's fade out; a new track starts at full) */
   void bgmLevel(final float level) {
     runOnUiThread(() -> {
       if (bgm != null) bgm.setVolume(level, level);
