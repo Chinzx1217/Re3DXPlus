@@ -2611,28 +2611,28 @@ static void effects_reset(void) {
 
 static void story_cut_start(void);
 
-static void movie_open(int select, int race, const int *rows, int n_rows) {
-#ifdef __ANDROID__
-  /* Keep Android out of the arcade realtime movie runtime. Start story races directly;
-   * the ending continues with its staff roll without the optional realtime movie. */
-  if (G.menu.ending == 2) {
-    fprintf(stderr, "story ending movie: skipped on Android; continuing with staff roll\n");
-    return;
-  }
-  fprintf(stderr, "story movie: skipped on Android; starting race directly (select %d race %d)\n",
-          select, race);
+/* A movie can be absent from a particular story selection or its optional resources.
+ * In either case the race must still start; do not leave the story state machine idle. */
+static void story_race_start_without_movie(void) {
+  car_movie_end();
   car_cutin_stop();
   hud_story_cut_file(NULL);
   car_set_rivals(G.race_rv, G.race_nrv);
-  car_start(&G.car, G.race_course, G.menu.manual, &G.race_spec);
+  if (car_start(&G.car, G.race_course, G.menu.manual, &G.race_spec) != 0)
+    fprintf(stderr, "story race: fallback car_start failed (course %d)\n", G.race_course);
   story_cut_start();
   effects_reset();
-  return;
-#endif
+}
+
+static void movie_open(int select, int race, const int *rows, int n_rows) {
   const storymovie *mv = NULL;
   for (int i = 0; i < STORYMOVIE_N && !mv; ++i)
     if (STORYMOVIE[i].select == select && STORYMOVIE[i].race == race) mv = &STORYMOVIE[i];
-  if (!mv || getenv("WMMT_NO_MOVIE")) return;
+  if (!mv || getenv("WMMT_NO_MOVIE")) {
+    fprintf(stderr, "story movie unavailable (select %d race %d); starting race without movie\n", select, race);
+    story_race_start_without_movie();
+    return;
+  }
   car_rival cars[CAR_RIVALS];
   int used[RACE_ROWS] = { 0 };
   memset(cars, 0, sizeof cars);
@@ -2654,11 +2654,9 @@ static void movie_open(int select, int race, const int *rows, int n_rows) {
   hud_story_cut_file(NULL);
   float len = car_movie_start(&G.car, mv->movie, &G.race_spec, cars, CAR_RIVALS);
   fprintf(stderr, "story movie %d (select %d race %d): %.0f frames\n", mv->movie, select, race, len);
-  if (len <= 1.0f) { /* its trails missing: the race at once */
-    car_set_rivals(G.race_rv, G.race_nrv);
-    car_start(&G.car, G.race_course, G.menu.manual, &G.race_spec);
-    story_cut_start();
-    effects_reset();
+  if (!(len > 1.0f)) { /* missing/invalid movie resources: the race at once */
+    fprintf(stderr, "story movie %d unavailable; starting race without movie\n", mv->movie);
+    story_race_start_without_movie();
     return;
   }
   G.movie_len = len;
