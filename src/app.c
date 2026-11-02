@@ -2613,21 +2613,21 @@ static void story_cut_start(void);
 
 static void movie_open(int select, int race, const int *rows, int n_rows) {
 #ifdef __ANDROID__
-  /* The Android 6 / GLES2 port can run the race simulation, but the arcade realtime
-   * movie runtime is not reliable on this target. Start each story race directly rather
-   * than entering clMovieSystem::Init (which otherwise terminates the app on device).
-   * Keep the original movie path for the story ending. */
-  if (G.menu.ending != 2) {
-    fprintf(stderr, "story movie: skipped on Android; starting race directly (select %d race %d)\n",
-            select, race);
-    car_cutin_stop();
-    hud_story_cut_file(NULL);
-    car_set_rivals(G.race_rv, G.race_nrv);
-    car_start(&G.car, G.race_course, G.menu.manual, &G.race_spec);
-    story_cut_start();
-    effects_reset();
+  /* Keep Android out of the arcade realtime movie runtime. Start story races directly;
+   * the ending continues with its staff roll without the optional realtime movie. */
+  if (G.menu.ending == 2) {
+    fprintf(stderr, "story ending movie: skipped on Android; continuing with staff roll\n");
     return;
   }
+  fprintf(stderr, "story movie: skipped on Android; starting race directly (select %d race %d)\n",
+          select, race);
+  car_cutin_stop();
+  hud_story_cut_file(NULL);
+  car_set_rivals(G.race_rv, G.race_nrv);
+  car_start(&G.car, G.race_course, G.menu.manual, &G.race_spec);
+  story_cut_start();
+  effects_reset();
+  return;
 #endif
   const storymovie *mv = NULL;
   for (int i = 0; i < STORYMOVIE_N && !mv; ++i)
