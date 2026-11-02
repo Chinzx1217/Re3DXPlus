@@ -1,6 +1,6 @@
 /* The Android side of the port (main.m's, for a phone like the Xiaomi Mi 6): MainActivity.java
  * hands over the SurfaceView's surface, touches, the gravity and the lifecycle; the game runs
- * on a thread of its own here with an OpenGL ES 3 context (4x MSAA) on that surface, the
+ * on a thread of its own here with an OpenGL ES 2 context (4x MSAA where available) on that surface, the
  * loading thread with a context sharing it, and the sound through OpenSL ES. Built with -DWMMT_VK
  * the game's GL goes through vkgl (Vulkan) instead: a swapchain on the surface, the loading
  * thread vkgl's second. */
