@@ -765,12 +765,12 @@ static int movie_resource_dir(const char *name) {
 }
 
 float car_movie_start(car_state *c, int id, const car_spec *player, const car_rival *rivals, int n) {
-  P.ready = 0;
   movie = 0;
   if (!P.config[0] || !movie_resource_dir("table") || !movie_resource_dir("trail")) {
     fprintf(stderr, "story movie: realtime resources unavailable; using race fallback\n");
     return 0;
   }
+  P.ready = 0;
   if (rc_load_image(P.image) != 0) {
     fprintf(stderr, "story movie: cannot reload physics image %s\n", P.image);
     return 0;
