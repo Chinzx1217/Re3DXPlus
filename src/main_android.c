@@ -9,7 +9,8 @@
 #endif
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
-#include <aaudio/AAudio.h>
+#include <SLES/OpenSLES.h>
+#include <SLES/OpenSLES_Android.h>
 #include <android/log.h>
 #include <android/native_window_jni.h>
 #include <jni.h>
@@ -59,7 +60,6 @@ static struct {
   float touch_k, touch_edge;
   int movie; /* shown, -1 none */
   const char *bgm;
-  AAudioStream *audio;
 } A = { .movie = -1 };
 
 static double now_s(void) {
@@ -68,43 +68,63 @@ static double now_s(void) {
   return (double)t.tv_sec + t.tv_nsec * 1e-9;
 }
 
-/* ---- sound: sound.c's mix, 44.1 kHz stereo int16, low latency ---- */
+/* ---- sound: OpenSL ES output for Android 2.3+ (including Android 6.0) ---- */
 
-static aaudio_data_callback_result_t audio_cb(AAudioStream *s, void *user, void *data, int32_t frames) {
-  snd_mix((short *)data, frames);
-  return AAUDIO_CALLBACK_RESULT_CONTINUE;
+#define AUDIO_FRAMES 1024
+static SLObjectItf sl_engine_object;
+static SLEngineItf sl_engine;
+static SLObjectItf sl_output_mix_object;
+static SLObjectItf sl_player_object;
+static SLPlayItf sl_play;
+static SLAndroidSimpleBufferQueueItf sl_queue;
+static short sl_audio_buffers[2][AUDIO_FRAMES * 2];
+static unsigned sl_audio_next;
+
+static void audio_queue_cb(SLAndroidSimpleBufferQueueItf queue, void *context) {
+  unsigned i = sl_audio_next++ & 1u;
+  snd_mix(sl_audio_buffers[i], AUDIO_FRAMES);
+  (*queue)->Enqueue(queue, sl_audio_buffers[i], sizeof sl_audio_buffers[i]);
 }
-
-static void audio_error(AAudioStream *s, void *user, aaudio_result_t err);
 
 static void audio_open(void) {
-  AAudioStreamBuilder *b;
-  if (AAudio_createStreamBuilder(&b) != AAUDIO_OK) return;
-  AAudioStreamBuilder_setFormat(b, AAUDIO_FORMAT_PCM_I16);
-  AAudioStreamBuilder_setChannelCount(b, 2);
-  AAudioStreamBuilder_setSampleRate(b, SND_RATE);
-  AAudioStreamBuilder_setPerformanceMode(b, AAUDIO_PERFORMANCE_MODE_LOW_LATENCY);
-  AAudioStreamBuilder_setUsage(b, AAUDIO_USAGE_GAME);
-  AAudioStreamBuilder_setDataCallback(b, audio_cb, NULL);
-  AAudioStreamBuilder_setErrorCallback(b, audio_error, NULL);
-  if (AAudioStreamBuilder_openStream(b, &A.audio) == AAUDIO_OK) AAudioStream_requestStart(A.audio);
-  else A.audio = NULL;
-  AAudioStreamBuilder_delete(b);
+  SLresult r;
+  const SLInterfaceID queue_ids[] = { SL_IID_ANDROIDSIMPLEBUFFERQUEUE };
+  const SLboolean queue_required[] = { SL_BOOLEAN_TRUE };
+  SLDataLocator_AndroidSimpleBufferQueue queue_locator = {
+    SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE, 2
+  };
+  SLDataFormat_PCM pcm = {
+    SL_DATAFORMAT_PCM, 2, SL_SAMPLINGRATE_44_1,
+    SL_PCMSAMPLEFORMAT_FIXED_16, SL_PCMSAMPLEFORMAT_FIXED_16,
+    SL_SPEAKER_FRONT_LEFT | SL_SPEAKER_FRONT_RIGHT, SL_BYTEORDER_LITTLEENDIAN
+  };
+  SLDataSource source = { &queue_locator, &pcm };
+  SLDataLocator_OutputMix output_locator = { SL_DATALOCATOR_OUTPUTMIX, sl_output_mix_object };
+  SLDataSink sink = { &output_locator, NULL };
+
+  if (sl_player_object) return;
+  if (slCreateEngine(&sl_engine_object, 0, NULL, 0, NULL, NULL) != SL_RESULT_SUCCESS) return;
+  if ((*sl_engine_object)->Realize(sl_engine_object, SL_BOOLEAN_FALSE) != SL_RESULT_SUCCESS) return;
+  if ((*sl_engine_object)->GetInterface(sl_engine_object, SL_IID_ENGINE, &sl_engine) != SL_RESULT_SUCCESS) return;
+  if ((*sl_engine)->CreateOutputMix(sl_engine, &sl_output_mix_object, 0, NULL, NULL) != SL_RESULT_SUCCESS) return;
+  if ((*sl_output_mix_object)->Realize(sl_output_mix_object, SL_BOOLEAN_FALSE) != SL_RESULT_SUCCESS) return;
+  r = (*sl_engine)->CreateAudioPlayer(sl_engine, &sl_player_object, &source, &sink,
+                                      1, queue_ids, queue_required);
+  if (r != SL_RESULT_SUCCESS) { sl_player_object = NULL; return; }
+  if ((*sl_player_object)->Realize(sl_player_object, SL_BOOLEAN_FALSE) != SL_RESULT_SUCCESS) return;
+  if ((*sl_player_object)->GetInterface(sl_player_object, SL_IID_PLAY, &sl_play) != SL_RESULT_SUCCESS) return;
+  if ((*sl_player_object)->GetInterface(sl_player_object, SL_IID_ANDROIDSIMPLEBUFFERQUEUE, &sl_queue) != SL_RESULT_SUCCESS) return;
+  if ((*sl_queue)->RegisterCallback(sl_queue, audio_queue_cb, NULL) != SL_RESULT_SUCCESS) return;
+  sl_audio_next = 0;
+  for (int i = 0; i < 2; ++i) {
+    snd_mix(sl_audio_buffers[i], AUDIO_FRAMES);
+    if ((*sl_queue)->Enqueue(sl_queue, sl_audio_buffers[i], sizeof sl_audio_buffers[i]) != SL_RESULT_SUCCESS) return;
+  }
+  (*sl_play)->SetPlayState(sl_play, SL_PLAYSTATE_PLAYING);
 }
 
-/* the output went away (headphones in or out): a new stream, from a thread of its own as
- * AAudio asks */
-static void *audio_reopen(void *arg) {
-  if (A.audio) AAudioStream_close(A.audio);
-  A.audio = NULL;
-  audio_open();
-  return NULL;
-}
-
-static void audio_error(AAudioStream *s, void *user, aaudio_result_t err) {
-  if (err != AAUDIO_ERROR_DISCONNECTED) return;
-  pthread_t t;
-  if (pthread_create(&t, NULL, audio_reopen, NULL) == 0) pthread_detach(t);
+static void audio_pause(int paused) {
+  if (sl_play) (*sl_play)->SetPlayState(sl_play, paused ? SL_PLAYSTATE_PAUSED : SL_PLAYSTATE_PLAYING);
 }
 
 /* ---- calls up to MainActivity (the game thread is attached to the VM) ---- */
@@ -197,9 +217,9 @@ static int egl_init(void) {
   /* 8-bit colour, depth 24 + stencil 8 (the cars' shadows), 4x MSAA where there is (an
    * Adreno resolves it on chip, nearly free) */
   for (int samples = 4; samples >= 0; samples -= 4) {
-    const EGLint attr[] = { EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT_KHR, EGL_SURFACE_TYPE, EGL_WINDOW_BIT | EGL_PBUFFER_BIT,
+    const EGLint attr[] = { EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT, EGL_SURFACE_TYPE, EGL_WINDOW_BIT | EGL_PBUFFER_BIT,
                             EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8, EGL_ALPHA_SIZE, 0,
-                            EGL_DEPTH_SIZE, 24, EGL_STENCIL_SIZE, 8,
+                            EGL_DEPTH_SIZE, 16, EGL_STENCIL_SIZE, 8,
                             EGL_SAMPLE_BUFFERS, samples ? 1 : 0, EGL_SAMPLES, samples, EGL_NONE };
     EGLint n = 0;
     if (eglChooseConfig(A.dpy, attr, &A.config, 1, &n) && n == 1) {
@@ -208,7 +228,7 @@ static int egl_init(void) {
     }
     if (!samples) return -1;
   }
-  const EGLint ca[] = { EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE };
+  const EGLint ca[] = { EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE };
   A.ctx = eglCreateContext(A.dpy, A.config, EGL_NO_CONTEXT, ca);
   if (A.ctx == EGL_NO_CONTEXT) return -1;
   A.load_ctx = eglCreateContext(A.dpy, A.config, A.ctx, ca);
@@ -272,7 +292,7 @@ static int start_game(void) {
 static void *game(void *arg) {
   env_here();
   if (egl_init() != 0) {
-    call_str(A.fail, "no OpenGL ES 3 on this phone");
+    call_str(A.fail, "Could not create an OpenGL ES 2.0 context");
     return NULL;
   }
   double last = 0;
@@ -288,7 +308,7 @@ static void *game(void *arg) {
 #ifdef WMMT_VK
         vkgl_pipeline_cache_save();
 #endif
-        if (A.audio) AAudioStream_requestPause(A.audio);
+        audio_pause(1);
         away = 1;
       }
       last = 0;
@@ -314,7 +334,7 @@ static void *game(void *arg) {
     }
     if (away) {
       app_suspend(0);
-      if (A.audio) AAudioStream_requestStart(A.audio);
+      audio_pause(0);
       away = 0;
     }
     if (warn) app_memory_warning();
