@@ -2629,6 +2629,10 @@ static void movie_open(int select, int race, const int *rows, int n_rows) {
   for (int i = 0; i < STORYMOVIE_N && !mv; ++i)
     if (STORYMOVIE[i].select == select && STORYMOVIE[i].race == race) mv = &STORYMOVIE[i];
   if (!mv || getenv("WMMT_NO_MOVIE")) {
+    if (G.menu.ending == 2) {
+      fprintf(stderr, "story ending movie unavailable; continuing with staff roll\n");
+      return;
+    }
     fprintf(stderr, "story movie unavailable (select %d race %d); starting race without movie\n", select, race);
     story_race_start_without_movie();
     return;
@@ -2655,6 +2659,10 @@ static void movie_open(int select, int race, const int *rows, int n_rows) {
   float len = car_movie_start(&G.car, mv->movie, &G.race_spec, cars, CAR_RIVALS);
   fprintf(stderr, "story movie %d (select %d race %d): %.0f frames\n", mv->movie, select, race, len);
   if (!(len > 1.0f)) { /* missing/invalid movie resources: the race at once */
+    if (G.menu.ending == 2) {
+      fprintf(stderr, "story ending movie %d unavailable; continuing with staff roll\n", mv->movie);
+      return;
+    }
     fprintf(stderr, "story movie %d unavailable; starting race without movie\n", mv->movie);
     story_race_start_without_movie();
     return;
