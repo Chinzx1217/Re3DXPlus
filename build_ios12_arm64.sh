@@ -72,7 +72,7 @@ command -v c++filt >/dev/null 2>&1 || {
 }
 
 mkdir -p build data
-if [ ! -f build/.ios_assets_ready ]; then
+if [ "${IOS_REBUILD_ASSETS:-0}" = "1" ] || [ ! -f build/.ios_assets_ready ]; then
   echo "== Generating code tables and recompiled arcade physics =="
   sh tools/gen_from_original.sh "$ORIG" --phys
 
