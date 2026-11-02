@@ -21,7 +21,6 @@ android {
         externalNativeBuild {
             cmake {
                 arguments '-DANDROID_STL=none'
-                cFlags '-DWMMT_EGL'
             }
         }
     }
