@@ -7,6 +7,8 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/..")
 set(SRC_DIR "${ROOT_DIR}/src")
 
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 add_library(phys_rc OBJECT
     "${SRC_DIR}/phys/phys_rc.c"
 )
