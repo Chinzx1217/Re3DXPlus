@@ -121,6 +121,14 @@ Android 想用高清贴图时，可以用 Real-ESRGAN 放大地图贴图（`tool
 
 ```sh
 sh build_ios12_arm64.sh  # 自动安装 iOS 12.4 SDK、生成素材并打包 ARM64 IPA
+
+无需安装 Xcode 或使用 `xcodebuild`；脚本直接调用 macOS 的 `clang`，并使用 `~/theos/sdks/iPhoneOS12.4.sdk`。默认会复用已完成的素材生成结果。若要从原版资料重新生成代码表、物理数据、地图、车辆、菜单、音频和影片，再重新打包：
+
+```sh
+IOS_REBUILD_ASSETS=1 sh build_ios12_arm64.sh
+```
+
+原版资料目录保持只读；生成的资源写入本仓库的 `data/`，不会上传原版资料。
 ```
 
 此分支以 iPad mini 2（A7 / ARM64）为目标。构建脚本在缺少 SDK 时，会从 theos/sdks 官方发布页安装打过补丁的 `iPhoneOS12.4.sdk` 到 `~/theos/sdks/`。最低系统版本默认为 iOS 9.3，可在 iOS 12.5.8 上运行。原版街机数据必须由用户自行准备，且不会上传到 GitHub。
