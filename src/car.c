@@ -7,6 +7,8 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#include <dirent.h>
+#include <sys/stat.h>
 
 #include "phys/rc_runtime.h"
 
@@ -737,10 +739,42 @@ static void read_rival(car_state *c) {
 #define MOVIE_SYSTEM_SIZE 0x1c1fcu
 static uint32_t movie;
 
+/* The realtime movie code assumes both resource trees exist. The attract MP4s are
+ * independent and do not prove these arcade resources were installed. */
+static int movie_resource_dir(const char *name) {
+  char path[1024];
+  struct stat st;
+  snprintf(path, sizeof path, "%s/rtmovie/%s", P.config, name);
+  if (stat(path, &st) != 0 || !S_ISDIR(st.st_mode)) {
+    fprintf(stderr, "story movie: missing resource directory %s\n", path);
+    return 0;
+  }
+  DIR *dir = opendir(path);
+  if (!dir) {
+    fprintf(stderr, "story movie: cannot read resource directory %s\n", path);
+    return 0;
+  }
+  int found = 0;
+  struct dirent *entry;
+  while ((entry = readdir(dir)) != NULL) {
+    if (entry->d_name[0] != '.') { found = 1; break; }
+  }
+  closedir(dir);
+  if (!found) fprintf(stderr, "story movie: empty resource directory %s\n", path);
+  return found;
+}
+
 float car_movie_start(car_state *c, int id, const car_spec *player, const car_rival *rivals, int n) {
   P.ready = 0;
   movie = 0;
-  if (rc_load_image(P.image) != 0) return 0;
+  if (!P.config[0] || !movie_resource_dir("table") || !movie_resource_dir("trail")) {
+    fprintf(stderr, "story movie: realtime resources unavailable; using race fallback\n");
+    return 0;
+  }
+  if (rc_load_image(P.image) != 0) {
+    fprintf(stderr, "story movie: cannot reload physics image %s\n", P.image);
+    return 0;
+  }
   rc_reset_heap();
   P.spec = player ? *player : CAR_SPEC_FD3S;
   car_set_rivals(rivals, n);
@@ -750,10 +784,18 @@ float car_movie_start(car_state *c, int id, const car_spec *player, const car_ri
   uint32_t rival_type[CAR_RIVALS] = { 0 };
   for (int i = 0; i < P.n_rival; ++i) rival_type[i] = P.rival[i].type;
   uint32_t ms = rc_alloc(MOVIE_SYSTEM_SIZE);
+  fprintf(stderr, "story movie: init ctor id=%d rivals=%d\n", id, P.n_rival);
   call(f_89fe784, 2, ms, 1u);
+  fprintf(stderr, "story movie: init sequence id=%d\n", id);
   call(f_89fd9d0, 6, ms, (uint32_t)id, P.spec.type, rival_type[0], rival_type[1], rival_type[2]);
   float len = (float)ST(0);
   fpop();
+  if (!isfinite(len) || len <= 1.0f) {
+    fprintf(stderr, "story movie: Init returned invalid length %.3f for id=%d\n", len, id);
+    movie = 0;
+    return 0;
+  }
+  fprintf(stderr, "story movie: Init ok id=%d length=%.0f frames\n", id, len);
   call(f_89a2584, 1, fbits(1.0f / 60.0f));
   call(f_89a2548, 1, fbits(1.0f));
   P.m = M32(MACHINE_PTR);
