@@ -870,6 +870,23 @@ static void on_cutin_end(uint32_t pos) {
 
 const char *car_cutin_start(int select, int loop, const car_cutin_cb *cb) {
   cutin = 0;
+#ifdef __ANDROID__
+  /*
+   * The Android ARMv7 build aborts inside the arcade Cut::clCutIn::Init
+   * (f_85b16a4) while resolving its cut-in data. Keep Story Movie playback
+   * and the race running; omit only the optional in-race dialogue cut-in
+   * until the native address failure can be fixed with the original data.
+   */
+  (void)select;
+  (void)loop;
+  (void)cb;
+  rc_cutin_mode = 0;
+  rc_cutin_lines = 0;
+  rc_last_path[0] = 0;
+  rc_on_cutin_speak = NULL;
+  rc_on_cutin_end = NULL;
+  return NULL;
+#endif
   if (!P.ready || select < 0) return NULL;
   cutin_cb = *cb;
   rc_on_cutin_speak = on_cutin_speak;
