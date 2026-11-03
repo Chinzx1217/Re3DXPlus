@@ -85,7 +85,35 @@ command -v c++filt >/dev/null 2>&1 || {
   echo "c++filt not found. Install GNU binutils (for example: brew install binutils)." >&2; exit 1;
 }
 
-mkdir -p build data
+mkdir -p build
+
+# A requested clean rebuild keeps the previous generated data as a recoverable backup.
+# Original arcade files are never moved or modified.
+DATA_BACKUP=""
+if [ "${REBUILD_IOS_ASSETS:-0}" = "1" ]; then
+  DATA_BACKUP="build/data-backup-$(date +%Y%m%d-%H%M%S)"
+  if [ -e "$DATA_BACKUP" ]; then
+    echo "Backup path already exists: $DATA_BACKUP" >&2
+    exit 1
+  fi
+  if [ -d data ]; then mv data "$DATA_BACKUP"; fi
+  mkdir -p data
+  rm -f build/.ios_assets_ready
+  echo "Previous generated data preserved at $DATA_BACKUP"
+fi
+mkdir -p data
+
+restore_data_on_failure() {
+  status=$?
+  if [ "$status" -ne 0 ] && [ -n "$DATA_BACKUP" ] && [ -d "$DATA_BACKUP" ]; then
+    rm -rf data
+    mv "$DATA_BACKUP" data
+    echo "Restored previous generated data after failure." >&2
+  fi
+  exit "$status"
+}
+trap restore_data_on_failure EXIT HUP INT TERM
+
 if [ ! -f build/.ios_assets_ready ]; then
   echo "== Generating code tables and recompiled arcade physics =="
   sh tools/gen_from_original.sh "$ORIG" --phys
@@ -137,4 +165,4 @@ fi
 
 echo "== Compiling ARM64 iOS app and packaging IPA =="
 sh ./build.sh ipa
-echo "IPA ready: $ROOT/build/WMMT3DX-1.0.ipa"
+echo "IPA ready: $ROOT/build/WMMT3DX-1.0.ipa"\ntrap - EXIT HUP INT TERM
