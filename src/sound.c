@@ -84,38 +84,99 @@ static int shot_next;
 /* Minimal RIFF reader: PCM u8 or s16, mono. */
 static int load_wav(sample *s, const char *path) {
   FILE *f = fopen(path, "rb");
-  if (!f) return -1;
-  unsigned char hdr[12];
-  int bits = 0, chans = 0, ok = -1;
-  if (fread(hdr, 1, 12, f) == 12 && !memcmp(hdr, "RIFF", 4) && !memcmp(hdr + 8, "WAVE", 4)) {
-    unsigned char ck[8];
-    while (fread(ck, 1, 8, f) == 8) {
-      unsigned size = ck[4] | ck[5] << 8 | ck[6] << 16 | (unsigned)ck[7] << 24;
-      if (!memcmp(ck, "fmt ", 4)) {
-        unsigned char fmt[16];
-        if (size < 16 || fread(fmt, 1, 16, f) != 16) break;
-        chans = fmt[2] | fmt[3] << 8;
-        s->rate = fmt[4] | fmt[5] << 8 | fmt[6] << 16 | fmt[7] << 24;
-        bits = fmt[14] | fmt[15] << 8;
-        fseek(f, (long)(size - 16 + (size & 1)), SEEK_CUR);
-      } else if (!memcmp(ck, "data", 4)) {
-        if (chans != 1 || (bits != 8 && bits != 16)) break;
-        unsigned char *raw = malloc(size);
-        if (!raw || fread(raw, 1, size, f) != size) { free(raw); break; }
-        s->n = (int)(size / (bits / 8));
-        s->data = malloc(sizeof(short) * (size_t)s->n);
-        for (int i = 0; i < s->n; ++i)
-          s->data[i] = bits == 8 ? (short)((raw[i] - 128) << 8) : (short)(raw[2 * i] | raw[2 * i + 1] << 8);
-        free(raw);
-        ok = 0;
-        break;
-      } else {
-        fseek(f, (long)(size + (size & 1)), SEEK_CUR);
+  unsigned char hdr[12], ck[8], fmt[40] = { 0 };
+  unsigned char *raw = NULL;
+  long data_pos = -1;
+  uint32_t data_size = 0;
+  unsigned fmt_size = 0;
+  unsigned format = 0, chans = 0, rate = 0, bits = 0, align = 0;
+  const char *why = "invalid or incomplete RIFF/WAVE file";
+  if (!f) {
+    fprintf(stderr, "sound: cannot open %s\n", path);
+    return -1;
+  }
+  memset(s, 0, sizeof *s);
+  if (fread(hdr, 1, sizeof hdr, f) != sizeof hdr ||
+      memcmp(hdr, "RIFF", 4) || memcmp(hdr + 8, "WAVE", 4)) goto fail;
+
+  while (fread(ck, 1, sizeof ck, f) == sizeof ck) {
+    uint32_t size = (uint32_t)ck[4] | (uint32_t)ck[5] << 8 |
+                    (uint32_t)ck[6] << 16 | (uint32_t)ck[7] << 24;
+    long pos = ftell(f);
+    if (pos < 0) goto fail;
+    if (!memcmp(ck, "fmt ", 4)) {
+      unsigned take = size < sizeof fmt ? size : (unsigned)sizeof fmt;
+      if (size < 16 || fread(fmt, 1, take, f) != take) goto fail;
+      fmt_size = size;
+      format = (unsigned)fmt[0] | (unsigned)fmt[1] << 8;
+      chans = (unsigned)fmt[2] | (unsigned)fmt[3] << 8;
+      rate = (unsigned)fmt[4] | (unsigned)fmt[5] << 8 |
+             (unsigned)fmt[6] << 16 | (unsigned)fmt[7] << 24;
+      align = (unsigned)fmt[12] | (unsigned)fmt[13] << 8;
+      bits = (unsigned)fmt[14] | (unsigned)fmt[15] << 8;
+      if (format == 0xfffeu && fmt_size >= 40) {
+        /* WAVE_FORMAT_EXTENSIBLE: the first WORD of SubFormat is PCM (1). */
+        format = (unsigned)fmt[24] | (unsigned)fmt[25] << 8;
       }
+      if (fseek(f, (long)(size - take + (size & 1u)), SEEK_CUR) != 0) goto fail;
+    } else if (!memcmp(ck, "data", 4)) {
+      if (data_pos < 0) {
+        data_pos = pos;
+        data_size = size;
+      }
+      if (fseek(f, (long)(size + (size & 1u)), SEEK_CUR) != 0) goto fail;
+    } else {
+      if (fseek(f, (long)(size + (size & 1u)), SEEK_CUR) != 0) goto fail;
     }
   }
+
+  if (!fmt_size || data_pos < 0 || !data_size) goto fail;
+  if (format != 1u) { why = "only integer PCM WAV is supported"; goto fail; }
+  if (chans != 1u && chans != 2u) { why = "WAV must be mono or stereo"; goto fail; }
+  if (bits != 8u && bits != 16u) { why = "WAV must be 8-bit or 16-bit PCM"; goto fail; }
+  if (rate < 8000u || rate > 192000u) { why = "invalid WAV sample rate"; goto fail; }
+  if (align != chans * (bits / 8u) || !align || data_size % align) {
+    why = "invalid WAV block alignment or data size";
+    goto fail;
+  }
+
+  size_t frames = data_size / align;
+  if (!frames || frames > 0x7fffffffu) { why = "WAV sample is too large"; goto fail; }
+  raw = malloc(data_size);
+  s->data = malloc(sizeof(short) * frames);
+  if (!raw || !s->data) { why = "out of memory loading WAV"; goto fail; }
+  if (fseek(f, data_pos, SEEK_SET) != 0 || fread(raw, 1, data_size, f) != data_size) {
+    why = "truncated WAV data";
+    goto fail;
+  }
+
+  for (size_t i = 0; i < frames; ++i) {
+    size_t o = i * align;
+    int left, right;
+    if (bits == 8u) {
+      left = ((int)raw[o] - 128) << 8;
+      right = chans == 2u ? ((int)raw[o + 1] - 128) << 8 : left;
+    } else {
+      left = (int)(int16_t)((unsigned)raw[o] | (unsigned)raw[o + 1] << 8);
+      right = chans == 2u
+          ? (int)(int16_t)((unsigned)raw[o + 2] | (unsigned)raw[o + 3] << 8)
+          : left;
+    }
+    s->data[i] = (short)((left + right) / 2);
+  }
+  s->n = (int)frames;
+  s->rate = (int)rate;
+  free(raw);
   fclose(f);
-  return ok;
+  return 0;
+
+fail:
+  fprintf(stderr, "sound: rejected %s: %s\n", path, why);
+  free(raw);
+  free(s->data);
+  memset(s, 0, sizeof *s);
+  fclose(f);
+  return -1;
 }
 
 int snd_init(const char *data_dir) {
@@ -136,6 +197,8 @@ int snd_init(const char *data_dir) {
     LOOPS[i].pitch = 1;
   }
   snd_set_car(5, 24); /* the FD3S, tuned */
+  if (missing) fprintf(stderr, "sound: %d WAV file(s) missing or unsupported under %s\n", missing, data_dir);
+  else fprintf(stderr, "sound: all effect and engine WAV files loaded\n");
   return missing ? -1 : 0;
 }
 
