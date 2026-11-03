@@ -2,6 +2,12 @@
 # Build an ARM64 iPad IPA locally, without the Xcode GUI.
 # The original arcade data stays beside this repository and is never uploaded.
 set -eu
+MODE="${1:-ipa}"
+[ "$#" -le 1 ] || { echo "Usage: sh build_ios12_arm64.sh [data|ipa]" >&2; exit 2; }
+case "$MODE" in
+  data|ipa) ;;
+  *) echo "Usage: sh build_ios12_arm64.sh [data|ipa]" >&2; exit 2 ;;
+esac
 cd "$(dirname "$0")"
 ROOT="$(pwd)"
 ORIG="$ROOT/../Wangan Midnight Maximum Tune 3DX+ (Japan)"
@@ -85,6 +91,22 @@ command -v c++filt >/dev/null 2>&1 || {
   echo "c++filt not found. Install GNU binutils (for example: brew install binutils)." >&2; exit 1;
 }
 
+# The checked-in generator pipeline references four tools intentionally absent from
+# this source snapshot. Detect that before moving or generating any local data.
+if [ ! -f build/.ios_assets_ready ] || [ "${REBUILD_IOS_ASSETS:-0}" = "1" ]; then
+  missing=0
+  for file in tools/weartexts.py tools/titledb.py tools/storycut.py tools/storybgm.py; do
+    if [ ! -f "$file" ]; then
+      echo "Missing generator input: $file" >&2
+      missing=1
+    fi
+  done
+  [ "$missing" -eq 0 ] || {
+    echo "Cannot perform a clean data rebuild from this checkout until these tools are restored from a compatible local source tree." >&2
+    exit 1
+  }
+fi
+
 mkdir -p build
 
 # A requested clean rebuild keeps the previous generated data as a recoverable backup.
@@ -161,6 +183,12 @@ if [ ! -f build/.ios_assets_ready ]; then
   touch build/.ios_assets_ready
 else
   echo "Using previously generated local assets in data/."
+fi
+
+if [ "$MODE" = "data" ]; then
+  echo "Generated data directory: $ROOT/data"
+  echo "Next Android step: sh ./build_android_api23_armv7.sh data"
+  exit 0
 fi
 
 echo "== Compiling ARM64 iOS app and packaging IPA =="
