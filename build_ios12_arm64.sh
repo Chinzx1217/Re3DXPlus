@@ -99,7 +99,7 @@ command -v c++filt >/dev/null 2>&1 || {
 # this source snapshot. Detect that before moving or generating any local data.
 if [ ! -f build/.ios_assets_ready ] || [ "${REBUILD_IOS_ASSETS:-0}" = "1" ]; then
   missing=0
-  for file in tools/weartexts.py tools/titledb.py tools/storycut.py tools/storybgm.py; do
+  for file in tools/weartexts.py tools/titledb.py tools/storycut.py tools/storybgm.py tools/stage/pack_city_lights.py; do
     if [ ! -f "$file" ]; then
       echo "Missing generator input: $file" >&2
       missing=1
