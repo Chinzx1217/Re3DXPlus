@@ -137,6 +137,27 @@ VK=0 ./build_android.sh      # OpenGL ES 3 版
 
 默认 SDK 位置是 `~/Library/Android/sdk`，可以用 `ANDROID_HOME`、`JAVA_HOME` 改。apk 用构建时自动生成的本地密钥签名（`build/android/wmmt.keystore`）。着色器的 SPIR-V（`src/vkgl_spv.c`）由 `tools/vkglsl.py` 从 `tools/vkprogs/` 自动生成。
 
+138: The existing `build_android.sh` remains the legacy arm64 / Android 9+ build. The separate Android 6 compatibility target is documented in [ANDROID_STUDIO.md](ANDROID_STUDIO.md).
+
+## Android 6 / 32-bit ARM 兼容构建（实验性）
+
+此构建使用独立的 Gradle/CMake 配置，不要把上面的 legacy `build_android.sh` 当成 Android 6 版本：
+
+- Android 6.0（API 23）minimum
+- `armeabi-v7a`（32-bit ARM）
+- OpenGL ES 2.0 / EGL
+- OpenSL ES audio output
+
+在 Android Studio 打开包含 `settings.gradle` 的仓库根目录，或在 macOS / Linux / Git Bash 终端运行：
+
+```sh
+sh ./build_android_api23_armv7.sh
+```
+
+需要 Android SDK Platform 35、NDK 27.2.12479018、CMake 3.22.1 和 JDK 17+。APK 输出在 `android/build/outputs/apk/`。游戏数据不会打包进 APK；启动器会从 SD 卡根目录或内部共享存储根目录下的 `data/` 文件夹读取数据（必须有 `menu.bin`），不是从 app-specific files 目录读取。音效和 BGM 文件准备方式见 [ANDROID_STUDIO.md](ANDROID_STUDIO.md)。
+
+此兼容构建尚未完成 Android 6 实机验证；请勿将成功编译等同于设备运行验证。
+
 ## 联网对战
 
 ```sh
