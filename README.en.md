@@ -1,5 +1,7 @@
 <p align="center"><img src="docs/logo.png" alt="Re3DX+" width="480"></p>
 
+Upstream synchronization audit: [UPSTREAM_SYNC_AUDIT.md](UPSTREAM_SYNC_AUDIT.md)
+
 Mac build guide (Android 6 ARMv7 / iPad iOS 9.3+): [BUILD_MAC.md](BUILD_MAC.md)
 
 
