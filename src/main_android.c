@@ -163,6 +163,14 @@ fail:
   audio_release();
 }
 
+/* Pause/resume the OpenSL ES player without destroying the mixer or its queued buffers. */
+static void audio_pause(int paused) {
+  if (!sl_play) return;
+  SLresult r = (*sl_play)->SetPlayState(sl_play, paused ? SL_PLAYSTATE_PAUSED : SL_PLAYSTATE_PLAYING);
+  if (r != SL_RESULT_SUCCESS)
+    fprintf(stderr, "OpenSL ES: %s failed (0x%x)\\n", paused ? "pause" : "resume", (unsigned)r);
+}
+
 /* ---- calls up to MainActivity (the game thread is attached to the VM) ---- */
 
 static JNIEnv *env_here(void) {
