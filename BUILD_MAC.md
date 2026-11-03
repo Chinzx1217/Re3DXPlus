@@ -26,7 +26,7 @@ The latest public `Re3DXPlus_Original` snapshots intentionally omit some origina
 
 ## 3. Generate the shared game data on macOS
 
-Install Python 3, GNU binutils (`c++filt`), FFmpeg with a Bink decoder, and the macOS `afconvert` utility. The script creates a project-local Python virtual environment and installs `capstone`, `unicorn`, `Pillow`, and `numpy`.
+Install Python 3, GNU binutils (`c++filt`), FFmpeg with a Bink decoder, and the macOS `afconvert` utility. The script creates a project-local Python virtual environment and installs `capstone`, `unicorn`, `Pillow`, and `numpy`. Data-only mode does not require Xcode, an iPhoneOS SDK, or `ldid`; those are required only for the IPA build.
 
 From Terminal:
 
