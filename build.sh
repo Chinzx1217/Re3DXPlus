@@ -1,7 +1,7 @@
 #!/bin/sh
-# Build WMMT.app for ARM64 iPad (iOS 9.3+) with clang and the patched iPhoneOS 12.4 SDK,
-# fake-signed with ldid. Usage: ./build.sh [deploy|ipa]; PHONE=1 ./build.sh ipa builds the
-# iPhone 4's (iPhone family, its own bundle id and icons; main.m/app.c fit the game to its 3:2).
+# Build WMMT.app for ARM64 iPad (iOS 9.3+) with the selected iPhoneOS SDK, fake-signed
+# with ldid. Usage: ./build.sh [deploy|ipa]. The legacy PHONE=1 metadata switch is not
+# part of the supported ARM64 / iOS 9.3+ build target.
 #   deploy: copy the app (and data, first time) to the iPad over `ssh ipad` (needs iproxy 2222:22).
 #   ipa: build/WMMT3DX-<version>.ipa with the game data inside the bundle (for AppSync installs;
 #        the player's files then go to the app's Documents, see main.m SaveDir).
