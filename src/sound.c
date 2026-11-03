@@ -3,6 +3,7 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -81,7 +82,7 @@ static voice LOOPS[N_LOOP], SHOTS[N_SHOT];
 static voice BAR; /* the story result's points gauge counting (SE 0x43, looped till stopped) */
 static int shot_next;
 
-/* Minimal RIFF reader: PCM u8 or s16, mono. */
+/* RIFF reader: integer PCM, mono or stereo, 8-bit or 16-bit; stereo is downmixed. */
 static int load_wav(sample *s, const char *path) {
   FILE *f = fopen(path, "rb");
   unsigned char hdr[12], ck[8], fmt[40] = { 0 };
