@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate one city's LIT1 light locator file from its Lua scene references."""
+"""Generate one city's LIT1 light locator file from its daytime/night scene Lua lists."""
 import os
 import re
 import sys
@@ -7,38 +7,30 @@ import sys
 from pack_lights import BUILDING_TYPES, STREET_TYPES, locators, write_bin
 
 
-def lua_references(data, city, key):
-    roots = [os.path.join(data, city), os.path.join(data, "lua_common")]
-    found = []
-    for root in roots:
-        if not os.path.isdir(root):
-            continue
-        for base, _, files in os.walk(root):
-            for filename in files:
-                if not filename.lower().endswith(".lua"):
-                    continue
-                path = os.path.join(base, filename)
-                try:
-                    with open(path, encoding="utf-8", errors="replace") as stream:
-                        source = stream.read()
-                except OSError:
-                    continue
-                pattern = r"\b" + re.escape(key) + r"\s*=\s*\{([^{}]*)\}"
-                for match in re.finditer(pattern, source, flags=re.S):
-                    found.extend(re.findall(r'"([^"]+\.igb)"', match.group(1), flags=re.I))
-    return list(dict.fromkeys(found))
+def lua_lists(path):
+    """Read model lists using the same Lua parsing rules as pack_city.py."""
+    with open(path, encoding="utf-8", errors="replace") as stream:
+        source = stream.read()
+    source = re.sub(r"--\\[\\[.*?\\]\\]", "", source, flags=re.S)
+    source = re.sub(r"--[^\\n]*", "", source)
+    lists = {}
+    for match in re.finditer(r"\\b(\\w+)\\s*=\\s*\\{([^{}]*)\\}", source):
+        files = re.findall(r'"([^"]+\\.igb)"', match.group(2), flags=re.I)
+        if files or not match.group(2).strip():
+            lists[match.group(1)] = files
+    return lists
 
 
-def resolve(data, city, ref):
-    clean = ref.replace("\\", "/").lstrip("/")
+def resolve(data, scene_dir, ref):
+    clean = ref.replace("\\\\", "/").lstrip("/")
     candidates = []
     if clean.startswith("data/"):
-        candidates.append(os.path.join(os.path.dirname(data), clean))
-        clean = clean[5:]
-    candidates.extend((os.path.join(data, city, clean), os.path.join(data, clean)))
+        candidates.append(os.path.join(data, clean[5:]))
+    candidates.extend((os.path.join(scene_dir, clean), os.path.join(data, clean)))
     for path in candidates:
         if os.path.isfile(path):
             return path
+
     basename = os.path.basename(clean)
     matches = []
     for base, _, files in os.walk(data):
@@ -50,14 +42,25 @@ def resolve(data, city, ref):
 
 
 def collect(data, city, key, types):
-    refs = lua_references(data, city, key)
-    if not refs:
-        raise RuntimeError("%s reference not found in %s or lua_common Lua files" % (key, city))
     lights = []
-    for ref in refs:
-        path = resolve(data, city, ref)
-        print("%s: %s -> %s" % (key, ref, path), flush=True)
-        lights.extend(locators(path, types))
+    seen = set()
+    for time in ("daytime", "night"):
+        scene_dir = os.path.join(data, city, time)
+        scene = os.path.join(scene_dir, time + ".lua")
+        if not os.path.isfile(scene):
+            print("Skipping missing scene Lua: %s" % scene, flush=True)
+            continue
+        lists = lua_lists(scene)
+        refs = lists.get(key, [])
+        for ref in refs:
+            path = resolve(data, scene_dir, ref)
+            if path in seen:
+                continue
+            seen.add(path)
+            print("%s (%s): %s -> %s" % (key, time, ref, path), flush=True)
+            lights.extend(locators(path, types))
+    print("%s %s: %d source model(s), %d light locator(s)" %
+          (city, key, len(seen), len(lights)), flush=True)
     return lights
 
 
