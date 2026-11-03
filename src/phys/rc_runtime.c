@@ -45,7 +45,7 @@ uint32_t rc_alloc(uint32_t n) {
   if (n == 0) n = 1;
   if (!rc_mem) rc_fail("memory image is not loaded");
   if (p < RC_HEAP_BASE || p > heap_end || n > heap_end - p) {
-    fprintf(stderr, "rc: heap exhausted (request=%u used=%u capacity=%u)\\n",
+    fprintf(stderr, "rc: heap exhausted (request=%u used=%u capacity=%u)\n",
             n, p >= RC_HEAP_BASE ? p - RC_HEAP_BASE : 0u, RC_HEAP_SIZE);
     rc_fail("heap exhausted");
   }
@@ -389,13 +389,13 @@ int rc_load_image(const char *path) {
   uint32_t n = RC_IMG_END - RC_IMG_BASE;
   FILE *f = fopen(path, "rb");
   if (!f) {
-    fprintf(stderr, "rc: cannot open physics image %s\\n", path ? path : "(null)");
+    fprintf(stderr, "rc: cannot open physics image %s\n", path ? path : "(null)");
     return -1;
   }
   if (!rc_mem) {
     rc_mem = calloc(1, RC_MEM_SIZE);
     if (!rc_mem) {
-      fprintf(stderr, "rc: cannot allocate %u-byte emulated memory for %s\\n",
+      fprintf(stderr, "rc: cannot allocate %u-byte emulated memory for %s\n",
               (unsigned)RC_MEM_SIZE, path);
       fclose(f);
       return -1;
@@ -404,7 +404,7 @@ int rc_load_image(const char *path) {
   size_t got = fread(rc_mem + (RC_IMG_BASE - RC_MEM_BASE), 1, n, f);
   fclose(f);
   if (got != n) {
-    fprintf(stderr, "rc: incomplete physics image %s (read %lu of %u bytes)\\n",
+    fprintf(stderr, "rc: incomplete physics image %s (read %lu of %u bytes)\n",
             path, (unsigned long)got, n);
     return -1;
   }
