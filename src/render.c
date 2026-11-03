@@ -518,7 +518,7 @@ int render_init(void) {
   wmmt_glBindVertexArrayOES = (PFNGLBINDVERTEXARRAYOESPROC)eglGetProcAddress("glBindVertexArrayOES");
   wmmt_glDeleteVertexArraysOES = (PFNGLDELETEVERTEXARRAYSOESPROC)eglGetProcAddress("glDeleteVertexArraysOES");
   if (!wmmt_glGenVertexArraysOES || !wmmt_glBindVertexArrayOES || !wmmt_glDeleteVertexArraysOES) {
-    fprintf(stderr, "GLES2: OES_vertex_array_object unavailable; using per-draw vertex bindings\\n");
+    fprintf(stderr, "GLES2: OES_vertex_array_object unavailable; using per-draw vertex bindings\n");
     wmmt_glGenVertexArraysOES = vao_gen_fallback;
     wmmt_glBindVertexArrayOES = vao_bind_fallback;
     wmmt_glDeleteVertexArraysOES = vao_delete_fallback;
