@@ -87,28 +87,50 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Se
     return dir;
   }
 
+  /*
+   * The game data is deliberately kept outside the APK. Preferred layout:
+   *   <storage-root>/wmmt/menu.bin
+   *   <storage-root>/wmmt/sound/...
+   * Also accept the earlier <storage-root>/data layout for existing installs.
+   */
+  private File findGameDataInRoot(File storageRoot) {
+    if (storageRoot == null) return null;
+    String[] folderNames = { "wmmt", "data" };
+    for (String folderName : folderNames) {
+      File candidate = new File(storageRoot, folderName);
+      if (!candidate.isDirectory()) continue;
+      File menu = new File(candidate, "menu.bin");
+      if (candidate.canRead() && menu.isFile() && menu.canRead()) return candidate;
+    }
+    return null;
+  }
+
   private File findGameData() {
+    StringBuilder checked = new StringBuilder();
+
+    // Removable SD cards are discovered through the app-specific external-files paths.
+    // Walking four parents reaches the volume root on Android's standard layout:
+    // /storage/XXXX-XXXX/Android/data/<package>/files.
     File[] appDirs = getExternalFilesDirs(null);
     if (appDirs != null) {
       for (File appDir : appDirs) {
         if (appDir == null || !Environment.isExternalStorageRemovable(appDir)) continue;
-        File volumeRoot = volumeRoot(appDir);
-        if (volumeRoot == null) continue;
-        File candidate = new File(volumeRoot, "data");
-        if (candidate.exists() && candidate.isDirectory()) {
-          if (candidate.canRead() && new File(candidate, "menu.bin").isFile()) return candidate;
-          fail("The SD card contains a data folder, but it cannot be read or menu.bin is missing: " + candidate.getAbsolutePath());
-          return null;
-        }
+        File root = volumeRoot(appDir);
+        if (root == null) continue;
+        File found = findGameDataInRoot(root);
+        if (found != null) return found;
+        checked.append("\\nSD card: ").append(root.getAbsolutePath()).append("/wmmt or /data");
       }
     }
 
+    // The primary shared-storage root is normally /storage/emulated/0.
     File primaryRoot = Environment.getExternalStorageDirectory();
-    File internalData = new File(primaryRoot, "data");
-    if (internalData.isDirectory() && internalData.canRead() && new File(internalData, "menu.bin").isFile())
-      return internalData;
+    File found = findGameDataInRoot(primaryRoot);
+    if (found != null) return found;
 
-    fail("Game data was not found. Put the complete game folder at SD card root/data first. If it is not there, put it at internal storage root/data. The folder must contain menu.bin.");
+    fail("Game data was not found. Create a folder named wmmt at the root of your SD card or internal shared storage, then copy the game data files directly into it (menu.bin must be inside wmmt). The older folder name data is also accepted."
+        + checked.toString()
+        + "\\nInternal storage checked: " + primaryRoot.getAbsolutePath() + "/wmmt or /data");
     return null;
   }
 
