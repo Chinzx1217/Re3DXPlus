@@ -19,19 +19,18 @@ def lua_references(data, city, key):
                     continue
                 path = os.path.join(base, filename)
                 try:
-                    source = open(path, encoding="utf-8", errors="replace").read()
+                    with open(path, encoding="utf-8", errors="replace") as stream:
+                        source = stream.read()
                 except OSError:
                     continue
-                # Scene tables use assignments such as StreetLight = { "path.igb" }.
-                pattern = r"\\b" + re.escape(key) + r"\\s*=\\s*\\{([^{}]*)\\}"
+                pattern = r"\b" + re.escape(key) + r"\s*=\s*\{([^{}]*)\}"
                 for match in re.finditer(pattern, source, flags=re.S):
-                    found.extend(re.findall(r'"([^"]+\\.igb)"', match.group(1), flags=re.I))
-    # Preserve order while removing duplicates.
+                    found.extend(re.findall(r'"([^"]+\.igb)"', match.group(1), flags=re.I))
     return list(dict.fromkeys(found))
 
 
 def resolve(data, city, ref):
-    clean = ref.replace("\\\\", "/").lstrip("/")
+    clean = ref.replace("\\", "/").lstrip("/")
     candidates = []
     if clean.startswith("data/"):
         candidates.append(os.path.join(os.path.dirname(data), clean))
@@ -68,10 +67,8 @@ def main():
     data, city = sys.argv[1:3]
     street = collect(data, city, "StreetLight", STREET_TYPES)
     building = collect(data, city, "BuildingLight", BUILDING_TYPES)
-    out = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "..", "data",
-                       "lights_%s.bin" % city)
-    # The output directory is the current repository's data/ directory.
-    out = os.path.abspath(out)
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    out = os.path.join(root, "data", "lights_%s.bin" % city)
     write_bin(out, street, building)
 
 
