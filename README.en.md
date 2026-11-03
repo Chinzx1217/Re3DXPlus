@@ -81,7 +81,7 @@ Tools you need:
 - Python 3 with `pip install capstone unicorn pillow`
 - `c++filt` (binutils)
 - ffmpeg with the Bink decoder (for the movies)
-- iOS: macOS + Xcode (clang), a patched `iPhoneOS9.3-armv7.sdk` from [theos](https://theos.dev) (in `~/theos/sdks/`), and `ldid`
+- iOS: macOS + an installed Xcode iPhoneOS SDK (`xcode-select`, `DEVELOPER_DIR`, or `IOS_SDK`), and `ldid`; the build script does not download SDKs
 - Android: the Android SDK (build-tools, platform) and NDK, and a JDK (the one bundled with Android Studio works)
 
 ## Step 1: generate the code tables and the physics
@@ -128,6 +128,15 @@ PHONE=1 ./build.sh ipa    # iPhone 4: build/WMMT3DX-1.0-iPhone4.ipa
 ```
 
 The ipa is fake-signed with ldid, so it needs a jailbroken device with AppSync. `deploy` needs a host named `ipad` in your `~/.ssh/config` (for example over USB with `iproxy 2222:22`).
+
+The ARM64 iOS build defaults to a **9.3 minimum deployment target** and is intended to run on iOS 12.5.8 as well. It uses the selected Xcode SDK (or `IOS_SDK=/path/to/iPhoneOS.sdk`); it does not download an SDK. The IPA packager copies the complete generated `data/` tree into the app bundle and fails before packaging if required map, menu, physics, audio, car, or story-movie assets are missing.
+
+```sh
+sh ./build_ios12_arm64.sh                         # generate assets if needed, then build the IPA
+REBUILD_IOS_ASSETS=1 sh ./build_ios12_arm64.sh  # rebuild data from scratch; old data is backed up
+```
+
+A clean data rebuild preserves the previous generated `data/` under `build/data-backup-*`. The original arcade directory beside the repository is not modified.
 
 ## Build for Android (legacy ARM64 / Android 9+)
 
