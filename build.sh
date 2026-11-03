@@ -150,12 +150,31 @@ if [ "$1" = "ipa" ]; then
   require_nonempty_dir "$APP/rtmovie/table"
   require_nonempty_dir "$APP/rtmovie/trail"
   require_nonempty_dir "$APP/cutin/jp"
+  bundle_min=$(plutil -extract MinimumOSVersion raw "$APP/Info.plist")
+  [ "$bundle_min" = "$MIN_IOS" ] || {
+    echo "IPA MinimumOSVersion mismatch: expected $MIN_IOS, got $bundle_min" >&2
+    exit 1
+  }
 
   ver=$(plutil -extract CFBundleShortVersionString raw "$APP/Info.plist")${PHONE:+-iPhone4}
+  IPA="build/WMMT3DX-$ver.ipa"
   rm -rf build/ipa && mkdir -p build/ipa/Payload && cp -R "$APP" build/ipa/Payload/
   (cd build/ipa && rm -f "../WMMT3DX-$ver.ipa" && zip -qry -1 "../WMMT3DX-$ver.ipa" Payload)
   rm -rf build/ipa
-  echo "packed $(pwd)/build/WMMT3DX-$ver.ipa ($(du -h "build/WMMT3DX-$ver.ipa" | cut -f1))"
+  unzip -t "$IPA" >/dev/null
+  for f in tokyo.wpk menu.bin phys.img; do
+    unzip -Z1 "$IPA" | grep -Fqx "Payload/WMMT.app/$f" || {
+      echo "IPA archive is missing Payload/WMMT.app/$f" >&2
+      exit 1
+    }
+  done
+  for d in rtmovie/table rtmovie/trail cutin/jp; do
+    unzip -Z1 "$IPA" | grep -q "^Payload/WMMT.app/$d/" || {
+      echo "IPA archive is missing Payload/WMMT.app/$d/" >&2
+      exit 1
+    }
+  done
+  echo "packed $(pwd)/$IPA ($(du -h "$IPA" | cut -f1))"
 fi
 
 if [ "$1" = "deploy" ]; then
