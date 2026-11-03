@@ -154,9 +154,6 @@ if [ ! -f build/.ios_assets_ready ]; then
     done
   done
   python3 tools/stage/pack_lights.py "$ORIG/data" data
-  for city in oosaka hakone nagoya fukuoka; do
-    python3 tools/stage/pack_city_lights.py "$ORIG/data" "$city"
-  done
   python3 tools/stage/pack_neon.py "$ORIG/data" data/neon.wpk
 
   python3 tools/stage/pack_cars.py "$ORIG" data/cars
@@ -192,6 +189,13 @@ if [ ! -f build/.ios_assets_ready ]; then
 else
   echo "Using previously generated local assets in data/."
 fi
+
+# Repair missing city light locator files even when the main asset marker already exists.
+for city in oosaka hakone nagoya fukuoka; do
+  if [ ! -s "data/lights_$city.bin" ]; then
+    python3 tools/stage/pack_city_lights.py "$ORIG/data" "$city"
+  fi
+done
 
 if [ "$MODE" = "data" ]; then
   # Validate the generated tree before reporting success or keeping a clean rebuild.
