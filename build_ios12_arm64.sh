@@ -181,6 +181,8 @@ if [ ! -f build/.ios_assets_ready ]; then
   python3 tools/make_icon.py
 
   touch build/.ios_assets_ready
+  # Generation is complete: keep the new data even if a later compile/package step fails.
+  DATA_BACKUP=""
 else
   echo "Using previously generated local assets in data/."
 fi
