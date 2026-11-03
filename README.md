@@ -1,5 +1,7 @@
 <p align="center"><img src="docs/logo.png" alt="Re3DX+" width="480"></p>
 
+上游同步审查记录：[UPSTREAM_SYNC_AUDIT.md](UPSTREAM_SYNC_AUDIT.md)
+
 Mac 构建指南（Android 6 ARMv7 / iPad iOS 9.3+）：[BUILD_MAC.md](BUILD_MAC.md)
 
 
