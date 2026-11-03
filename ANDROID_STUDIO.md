@@ -29,12 +29,16 @@ After Gradle sync completes, choose the `android` run configuration or use:
 
 The APK is generated under `android/build/outputs/apk/`.
 
-Game data is not bundled into the APK. The Android launcher searches for it in one of these locations:
+Game data is **not bundled into the APK**. Install the small APK separately, then copy the complete generated game-data contents into a folder named `wmmt` at either location:
 
-- The `data/` folder directly under the removable SD card's root
-- The `data/` folder directly under the internal shared-storage root
+- Removable SD-card root: `/storage/XXXX-XXXX/wmmt/`
+- Internal shared-storage root: `/storage/emulated/0/wmmt/`
 
-The selected folder must contain `menu.bin`. The app-specific `Android/data/com.wmmt.port/files` directory is used for saves, not for the game data folder.
+Put `menu.bin` directly inside `wmmt/` (not inside another nested `data/` folder). The folder also contains items such as `cars/`, `sound/`, `traffic/`, `rtmovie/`, and other generated game assets. Do not rename the individual files or subfolders.
+
+For backwards compatibility, the launcher also accepts the older folder name `data/` at either storage root. It checks removable SD cards first, then internal shared storage. The app-specific `Android/data/com.wmmt.port/files` directory is used for saves only, not game data.
+
+On Android 6, grant the app the requested storage permission so it can read the folder. The app does not need to copy the game data into its private directory.
 
 ## Prepare sound effects and BGM
 
