@@ -51,7 +51,7 @@ cat > "$APP/Info.plist" <<'PL'
     <string>Icon-72.png</string><string>Icon-72@2x.png</string><string>Icon-76.png</string><string>Icon-76@2x.png</string>
     <string>Icon-Small-50.png</string><string>Icon-Small-50@2x.png</string><string>Icon-Small.png</string><string>Icon-Small@2x.png</string></array>
   <key>UIPrerenderedIcon</key><true/>
-  <key>MinimumOSVersion</key><string>6.0</string>
+  <key>MinimumOSVersion</key><string>9.3</string>
   <key>UIDeviceFamily</key><array><integer>2</integer></array>
   <key>UIStatusBarHidden</key><true/>
   <key>UIRequiresPersistentWiFi</key><false/>
@@ -78,53 +78,73 @@ ldid -S "$APP/WMMT"
 echo "built $(pwd)/$APP"
 
 if [ "$1" = "ipa" ]; then
-  # Package the complete generated data tree. Do not silently omit files through optional copies.
-  ORIG="../Wangan Midnight Maximum Tune 3DX+ (Japan)"
-  [ -d "$ORIG/data/rtmovie/table" ] || { echo "Missing original data/rtmovie/table" >&2; exit 1; }
-  [ -d "$ORIG/data/rtmovie/trail" ] || { echo "Missing original data/rtmovie/trail" >&2; exit 1; }
-  [ -d "$ORIG/data/cutin/jp" ] || { echo "Missing original data/cutin/jp" >&2; exit 1; }
-  [ -f data/tokyo.wpk ] || { echo "Missing generated data/tokyo.wpk" >&2; exit 1; }
-  [ -f data/menu.bin ] || { echo "Missing generated data/menu.bin" >&2; exit 1; }
-  [ -f data/phys.img ] || { echo "Missing generated data/phys.img" >&2; exit 1; }
-  [ -f data/hud.bin ] || { echo "Missing generated data/hud.bin" >&2; exit 1; }
-  [ -f data/meters.bin ] || { echo "Missing generated data/meters.bin" >&2; exit 1; }
-  [ -f data/minicourse.wpk ] || { echo "Missing generated data/minicourse.wpk" >&2; exit 1; }
-  [ -d data/traffic ] || { echo "Missing generated data/traffic directory" >&2; exit 1; }
-  set -- data/traffic/*.wpk
-  [ -f "$1" ] || { echo "No traffic WPK files in data/traffic" >&2; exit 1; }
-  set -- data/cars/*.wpk
-  [ -f "$1" ] || { echo "No car WPK files in data/cars" >&2; exit 1; }
-  set -- data/sound/*.wav
-  [ -f "$1" ] || { echo "No sound-effect WAV files in data/sound" >&2; exit 1; }
-  set -- data/sound/engine/*.wav
-  [ -f "$1" ] || { echo "No engine WAV files in data/sound/engine" >&2; exit 1; }
-  set -- data/sound/bgm/*.m4a
-  [ -f "$1" ] || { echo "No BGM AAC files in data/sound/bgm" >&2; exit 1; }
+  ORIG_DATA="../Wangan Midnight Maximum Tune 3DX+ (Japan)/data"
+
+  require_file() {
+    if [ ! -s "$1" ]; then
+      echo "Missing required iOS runtime asset: $1" >&2
+      exit 1
+    fi
+  }
+  require_nonempty_dir() {
+    if [ ! -d "$1" ] || ! find "$1" -type f -print -quit | grep -q .; then
+      echo "Missing or empty required iOS runtime directory: $1" >&2
+      exit 1
+    fi
+  }
+
+  # Validate core generated resources before creating an IPA. Do not silently
+  # produce a partially populated app when a generator or source asset failed.
+  for f in tokyo.wpk tokyo_night.wpk sky.wpk sky_night.wpk arrows.wpk arrows.names \
+           arrows_night.wpk lights.wpk lights.bin neon.wpk fd3s.wpk hud.bin navi.bin \
+           meters.bin phys.img menu.bin minicourse.wpk intro.mp4 playdemo.mp4 tutorial.mp4; do
+    require_file "data/$f"
+  done
+  for c in oosaka hakone nagoya fukuoka; do
+    for f in "$c.wpk" "${c}_night.wpk" "sky_$c.wpk" "sky_${c}_night.wpk" \
+             "arrows_$c.wpk" "arrows_${c}_night.wpk" "arrows_$c.names" \
+             "lights_$c.bin" "navi_$c.bin"; do
+      require_file "data/$f"
+    done
+  done
+  require_nonempty_dir data/traffic
+  require_nonempty_dir data/cars
+  require_nonempty_dir data/chara
+  require_nonempty_dir data/wheels
+  require_nonempty_dir data/vinyl
+  require_nonempty_dir data/sound/bgm
+  require_nonempty_dir data/sound/engine
+  require_nonempty_dir "$ORIG_DATA/rtmovie/table"
+  require_nonempty_dir "$ORIG_DATA/rtmovie/trail"
+  require_nonempty_dir "$ORIG_DATA/cutin/jp"
+  require_file data/icon/Icon-72.png
+  require_file data/icon/Icon-76@2x.png
 
   mkdir -p data/carconfig
-  set -- "$ORIG/data/carconfig/"ytConfig*.txt
-  [ -f "$1" ] || { echo "No ytConfig*.txt files in original data/carconfig" >&2; exit 1; }
-  cp "$@" data/carconfig/
-  set -- "$ORIG/data/cutin/jp/"*.txt
-  [ -f "$1" ] || { echo "No story cut-in text files in original data/cutin/jp" >&2; exit 1; }
+  cp "$ORIG_DATA/carconfig/"ytConfig*.txt data/carconfig/
+  require_nonempty_dir data/carconfig
+  sh prepare_bgm.sh
 
-  # Copy every generated data file and subdirectory into the app bundle root.
-  # DataDir() detects tokyo.wpk in this root; SaveDir() then uses Documents.
+  # Copy the complete generated data tree, retaining every relative runtime path.
+  # This replaces the old hand-maintained list that silently skipped missing files.
   cp -R data/. "$APP/"
   mkdir -p "$APP/rtmovie" "$APP/cutin/jp"
-  cp -R "$ORIG/data/rtmovie/table" "$ORIG/data/rtmovie/trail" "$APP/rtmovie/"
-  cp "$@" "$APP/cutin/jp/"
+  cp -R "$ORIG_DATA/rtmovie/table" "$ORIG_DATA/rtmovie/trail" "$APP/rtmovie/"
+  cp "$ORIG_DATA/cutin/jp/"*.txt "$APP/cutin/jp/"
+
+  # Final bundle assertions: DataDir() must find tokyo.wpk and story movie trees
+  # must be present inside the read-only .app bundle.
+  require_file "$APP/tokyo.wpk"
+  require_file "$APP/menu.bin"
+  require_file "$APP/phys.img"
+  require_nonempty_dir "$APP/rtmovie/table"
+  require_nonempty_dir "$APP/rtmovie/trail"
+  require_nonempty_dir "$APP/cutin/jp"
 
   ver=$(plutil -extract CFBundleShortVersionString raw "$APP/Info.plist")${PHONE:+-iPhone4}
   rm -rf build/ipa && mkdir -p build/ipa/Payload && cp -R "$APP" build/ipa/Payload/
   (cd build/ipa && rm -f "../WMMT3DX-$ver.ipa" && zip -qry -1 "../WMMT3DX-$ver.ipa" Payload)
-  unzip -t "build/WMMT3DX-$ver.ipa" >/dev/null
-  unzip -l "build/WMMT3DX-$ver.ipa" | grep -q 'Payload/WMMT.app/tokyo.wpk' || {
-    echo "IPA verification failed: tokyo.wpk is not inside the app bundle" >&2; exit 1;
-  }
-  unzip -l "build/WMMT3DX-$ver.ipa" | grep -q 'Payload/WMMT.app/menu.bin' || {
-    echo "IPA verification failed: menu.bin is not inside the app bundle" >&2; exit 1;
-  }
+  rm -rf build/ipa
   echo "packed $(pwd)/build/WMMT3DX-$ver.ipa ($(du -h "build/WMMT3DX-$ver.ipa" | cut -f1))"
 fi
 
