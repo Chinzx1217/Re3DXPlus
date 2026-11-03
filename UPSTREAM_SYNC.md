@@ -11,7 +11,7 @@ Audit date: 2026-11-03
 
 The upstream tree is not a drop-in update for this branch. The upstream root contains platform choices that conflict with the requested targets, while its `ports/android/` and `ports/ipad/` directories are separate development snapshots rather than a tested release overlay.
 
-The shared root files were compared. The port-side changes below are intentional compatibility or crash-hardening changes and must not be replaced by the upstream versions:
+The recursive trees contained 571 upstream files and 167 target files at the audit point. Every upstream-only path was inside `ports/android/` or `ports/ipad/`; there were no new upstream-only root paths to copy. Fourteen shared paths differed. The port-side changes below are intentional compatibility or crash-hardening changes and must not be replaced by the upstream versions:
 
 - `src/main_android.c`, `android/AndroidManifest.xml`: retain OpenSL ES and GLES2 for Android 6 / API 23 / ARMv7. Upstream root uses AAudio and GLES3, which are not suitable defaults for this target.
 - `android/java/com/wmmt/port/MainActivity.java`: retain external-storage discovery for the user-managed `wmmt/` data folder, including Android 6 storage permission handling.
