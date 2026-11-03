@@ -40,4 +40,4 @@ For a clean local regeneration, use:
 REBUILD_IOS_ASSETS=1 sh ./build_ios12_arm64.sh
 ```
 
-The previous generated `data/` directory is preserved under `build/data-backup-*` if generation fails or completes. The original arcade data directory is not modified.
+On success, the previous generated `data/` directory remains preserved under `build/data-backup-*`. If generation fails, the wrapper restores the previous directory to `data/`. The original arcade data directory is not modified.
