@@ -154,6 +154,9 @@ if [ ! -f build/.ios_assets_ready ]; then
     done
   done
   python3 tools/stage/pack_lights.py "$ORIG/data" data
+  for city in oosaka hakone nagoya fukuoka; do
+    python3 tools/stage/pack_city_lights.py "$ORIG/data" "$city"
+  done
   python3 tools/stage/pack_neon.py "$ORIG/data" data/neon.wpk
 
   python3 tools/stage/pack_cars.py "$ORIG" data/cars
