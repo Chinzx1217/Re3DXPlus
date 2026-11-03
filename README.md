@@ -132,7 +132,7 @@ IPA 使用 `ldid` 伪签名；越狱设备需要安装 AppSync 才能安装。
 ./build_android.sh           # build/WMMT3DX-android.apk（Vulkan）
 VK=0 ./build_android.sh      # OpenGL ES 3 版
 ./build_android.sh install   # 并用 adb 安装
-./build_android.sh data      # 并把 data/ 推到 /sdcard/data
+./build_android.sh data      # 安装 APK，并把游戏数据推到 /sdcard/wmmt（独立于 APK）
 ```
 
 默认 SDK 位置是 `~/Library/Android/sdk`，可以用 `ANDROID_HOME`、`JAVA_HOME` 改。apk 用构建时自动生成的本地密钥签名（`build/android/wmmt.keystore`）。着色器的 SPIR-V（`src/vkgl_spv.c`）由 `tools/vkglsl.py` 从 `tools/vkprogs/` 自动生成。
@@ -156,7 +156,7 @@ sh ./build_android_api23_armv7.sh
 
 需要 Android SDK Platform 35、NDK 27.2.12479018、CMake 3.22.1 和 JDK 17+。APK 输出在 `android/build/outputs/apk/`。游戏数据不会打包进 APK；启动器会从 SD 卡根目录或内部共享存储根目录下的 `data/` 文件夹读取数据（必须有 `menu.bin`），不是从 app-specific files 目录读取。音效和 BGM 文件准备方式见 [ANDROID_STUDIO.md](ANDROID_STUDIO.md)。
 
-此兼容构建尚未完成 Android 6 实机验证；请勿将成功编译等同于设备运行验证。
+游戏数据不会打包进 APK。把生成的 data/ 文件夹**里面的内容**复制到 SD 卡或内部共享存储根目录的 wmmt/，确保 menu.bin 直接位于 wmmt/menu.bin；也兼容旧目录名 data/。APK 与游戏数据分开安装/复制，方便低端手机安装和单独更新。音效和 BGM 文件准备方式见 [ANDROID_STUDIO.md](ANDROID_STUDIO.md)。\n\n此兼容构建尚未完成 Android 6 实机验证；请勿将成功编译等同于设备运行验证。
 
 ## 联网对战
 
