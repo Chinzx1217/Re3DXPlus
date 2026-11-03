@@ -92,6 +92,12 @@ if [ "$1" = "ipa" ]; then
       exit 1
     fi
   }
+  require_pattern() {
+    if [ ! -d "$1" ] || ! find "$1" -type f -name "$2" -print -quit | grep -q .; then
+      echo "Missing required iOS runtime files ($2) under: $1" >&2
+      exit 1
+    fi
+  }
 
   # Validate core generated resources before creating an IPA. Do not silently
   # produce a partially populated app when a generator or source asset failed.
@@ -108,12 +114,16 @@ if [ "$1" = "ipa" ]; then
     done
   done
   require_nonempty_dir data/traffic
-  require_nonempty_dir data/cars
-  require_nonempty_dir data/chara
-  require_nonempty_dir data/wheels
-  require_nonempty_dir data/vinyl
-  require_nonempty_dir data/sound/bgm
-  require_nonempty_dir data/sound/engine
+  require_pattern data/traffic '*.wpk'
+  require_pattern data/cars '*.wpk'
+  require_pattern data/chara '*.wpk'
+  require_pattern data/wheels '*.wpk'
+  require_pattern data/vinyl '*.vpk'
+  require_pattern data/sound/bgm '*.m4a'
+  require_pattern data/sound '*.wav'
+  require_pattern data/sound/engine '*.wav'
+  require_file data/sound/rank.wav
+  require_file data/sound/engine/rx714.wav
   require_nonempty_dir "$ORIG_DATA/rtmovie/table"
   require_nonempty_dir "$ORIG_DATA/rtmovie/trail"
   require_nonempty_dir "$ORIG_DATA/cutin/jp"
