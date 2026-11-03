@@ -126,10 +126,10 @@ sh build_ios12_arm64.sh  # 自动安装 iOS 12.4 SDK、生成素材并打包 ARM
 此分支以 iPad mini 2（A7 / ARM64）为目标。构建脚本在缺少 SDK 时，会从 theos/sdks 官方发布页安装打过补丁的 `iPhoneOS12.4.sdk` 到 `~/theos/sdks/`。最低系统版本默认为 iOS 9.3，可在 iOS 12.5.8 上运行。原版街机数据必须由用户自行准备，且不会上传到 GitHub。
 
 IPA 使用 `ldid` 伪签名；越狱设备需要安装 AppSync 才能安装。
-## 构建 Android
+## 构建 Android（旧版 ARM64 / Android 9+）
 
 ```sh
-./build_android.sh           # build/WMMT3DX-android.apk（Vulkan）
+./build_android.sh           # 旧版 arm64-v8a / Android 9+ APK（Vulkan）
 VK=0 ./build_android.sh      # OpenGL ES 3 版
 ./build_android.sh install   # 并用 adb 安装
 ./build_android.sh data      # 安装 APK，并把游戏数据推到 /sdcard/wmmt（独立于 APK）
@@ -137,7 +137,7 @@ VK=0 ./build_android.sh      # OpenGL ES 3 版
 
 默认 SDK 位置是 `~/Library/Android/sdk`，可以用 `ANDROID_HOME`、`JAVA_HOME` 改。apk 用构建时自动生成的本地密钥签名（`build/android/wmmt.keystore`）。着色器的 SPIR-V（`src/vkgl_spv.c`）由 `tools/vkglsl.py` 从 `tools/vkprogs/` 自动生成。
 
-The existing `build_android.sh` remains the legacy arm64 / Android 9+ build. The separate Android 6 compatibility target is documented in [ANDROID_STUDIO.md](ANDROID_STUDIO.md).
+`build_android.sh` 是旧版 arm64-v8a / Android 9+ 构建，不适用于 Android 6 的 32-bit ARM。Android 6 请使用下面独立的 `build_android_api23_armv7.sh`。
 
 ## Android 6 / 32-bit ARM 兼容构建（实验性）
 
