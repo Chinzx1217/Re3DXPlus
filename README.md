@@ -155,6 +155,8 @@ sh ./build_android_api23_armv7.sh          # 只构建 Android 6 / ARMv7 APK
 sh ./build_android_api23_armv7.sh install # 构建并安装 APK（数据不打包）
 sh ./build_android_api23_armv7.sh data    # 安装 APK，并把本地游戏数据复制到 /sdcard/wmmt
 
+```
+
 需要 Android SDK Platform 35、NDK 27.2.12479018、CMake 3.22.1 和 JDK 17+。APK 输出在 `android/build/outputs/apk/`。游戏数据不会打包进 APK；启动器优先从 SD 卡根目录或内部共享存储根目录下的 `wmmt/` 文件夹读取数据（必须有 `wmmt/menu.bin`），同时兼容旧名称 `data/`；app-specific files 目录只用于保存。
 
 游戏数据不会打包进 APK。手动复制时，把生成的 `data/` 文件夹**里面的内容**复制到 SD 卡或内部共享存储根目录的 `wmmt/`，确保 `menu.bin` 直接位于 `wmmt/menu.bin`；也兼容旧目录名 `data/`。APK 与游戏数据分开安装/复制，方便低端手机安装和单独更新。音效和 BGM 文件准备方式见 [ANDROID_STUDIO.md](ANDROID_STUDIO.md)。
