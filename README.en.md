@@ -154,8 +154,7 @@ This is a separate Gradle/CMake target; the legacy `build_android.sh` above is n
 Open the repository root containing `settings.gradle` in Android Studio, or run:
 
 ```sh
-sh ./build_android_api23_armv7.sh
-```
+sh ./build_android_api23_armv7.sh          # build the Android 6 / ARMv7 APK only\nsh ./build_android_api23_armv7.sh install # build and install the APK (no game data bundled)\nsh ./build_android_api23_armv7.sh data    # install APK and copy local game data to /sdcard/wmmt
 
 Required components: Android SDK Platform 35, NDK 27.2.12479018, CMake 3.22.1 and JDK 17+. The APK is output under `android/build/outputs/apk/`. Game data is **not bundled into the APK**. Copy the *contents* of the generated local `data/` folder into `wmmt/` at the removable SD-card root or internal shared-storage root. `menu.bin` must be directly inside `wmmt/` (not nested in another `data/` folder). The launcher also accepts the legacy folder name `data/`, checks removable SD cards first and internal shared storage second, and uses the app-specific files directory for saves only. Install the APK and copy the data folder separately; this keeps the APK small and lets low-end phones install it without bundling the large game assets. See [ANDROID_STUDIO.md](ANDROID_STUDIO.md) for sound-effect and BGM preparation.
 
