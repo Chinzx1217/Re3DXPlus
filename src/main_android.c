@@ -122,7 +122,7 @@ static void audio_open(void) {
     SL_SPEAKER_FRONT_LEFT | SL_SPEAKER_FRONT_RIGHT, SL_BYTEORDER_LITTLEENDIAN
   };
   SLDataSource source = { &queue_locator, &pcm };
-  SLDataLocator_OutputMix output_locator = { SL_DATALOCATOR_OUTPUTMIX, sl_output_mix_object };
+  SLDataLocator_OutputMix output_locator = { SL_DATALOCATOR_OUTPUTMIX, NULL };
   SLDataSink sink = { &output_locator, NULL };
 
 #define AUDIO_TRY(stage, expression) do { \
@@ -139,6 +139,8 @@ static void audio_open(void) {
   AUDIO_TRY("engine GetInterface", (*sl_engine_object)->GetInterface(sl_engine_object, SL_IID_ENGINE, &sl_engine));
   AUDIO_TRY("CreateOutputMix", (*sl_engine)->CreateOutputMix(sl_engine, &sl_output_mix_object, 0, NULL, NULL));
   AUDIO_TRY("output mix Realize", (*sl_output_mix_object)->Realize(sl_output_mix_object, SL_BOOLEAN_FALSE));
+  /* Bind the sink only after CreateOutputMix has produced a valid object. */
+  output_locator.outputMix = sl_output_mix_object;
   AUDIO_TRY("CreateAudioPlayer", (*sl_engine)->CreateAudioPlayer(sl_engine, &sl_player_object, &source, &sink,
                                                                   1, queue_ids, queue_required));
   AUDIO_TRY("player Realize", (*sl_player_object)->Realize(sl_player_object, SL_BOOLEAN_FALSE));
