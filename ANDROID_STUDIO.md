@@ -31,8 +31,8 @@ The APK is generated under `android/build/outputs/apk/`.
 
 Game data is not bundled into the APK. The Android launcher searches for it in one of these locations:
 
-- Removable SD card root: `/data`
-- Internal shared-storage root: `/data`
+- The `data/` folder directly under the removable SD card's root
+- The `data/` folder directly under the internal shared-storage root
 
 The selected folder must contain `menu.bin`. The app-specific `Android/data/com.wmmt.port/files` directory is used for saves, not for the game data folder.
 
