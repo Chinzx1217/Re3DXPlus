@@ -11,18 +11,18 @@ def lua_lists(path):
     """Read model lists using the same Lua parsing rules as pack_city.py."""
     with open(path, encoding="utf-8", errors="replace") as stream:
         source = stream.read()
-    source = re.sub(r"--\\[\\[.*?\\]\\]", "", source, flags=re.S)
-    source = re.sub(r"--[^\\n]*", "", source)
+    source = re.sub(r"--\[\[.*?\]\]", "", source, flags=re.S)
+    source = re.sub(r"--[^\n]*", "", source)
     lists = {}
-    for match in re.finditer(r"\\b(\\w+)\\s*=\\s*\\{([^{}]*)\\}", source):
-        files = re.findall(r'"([^"]+\\.igb)"', match.group(2), flags=re.I)
+    for match in re.finditer(r"\b(\w+)\s*=\s*\{([^{}]*)\}", source):
+        files = re.findall(r'"([^"]+\.igb)"', match.group(2), flags=re.I)
         if files or not match.group(2).strip():
             lists[match.group(1)] = files
     return lists
 
 
 def resolve(data, scene_dir, ref):
-    clean = ref.replace("\\\\", "/").lstrip("/")
+    clean = ref.replace("\\", "/").lstrip("/")
     candidates = []
     if clean.startswith("data/"):
         candidates.append(os.path.join(data, clean[5:]))
