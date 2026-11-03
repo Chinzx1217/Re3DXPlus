@@ -138,7 +138,8 @@ restore_data_on_failure() {
   fi
   exit "$status"
 }
-trap restore_data_on_failure EXIT HUP INT TERM
+trap restore_data_on_failure EXIT
+trap 'exit 1' HUP INT TERM
 
 if [ ! -f build/.ios_assets_ready ]; then
   echo "== Generating code tables and recompiled arcade physics =="
