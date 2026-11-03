@@ -338,7 +338,7 @@ static GLuint white_tex;
 
 #ifdef WMMT_EGL
 PFNGLGENVERTEXARRAYSOESPROC wmmt_glGenVertexArraysOES;
-PFNGLBINDVERTEXARRAYSOESPROC wmmt_glBindVertexArrayOES;
+PFNGLBINDVERTEXARRAYOESPROC wmmt_glBindVertexArrayOES;
 PFNGLDELETEVERTEXARRAYSOESPROC wmmt_glDeleteVertexArraysOES;
 
 /* Some GLES2 devices (including a few Mali-400 drivers) lack OES_vertex_array_object.
