@@ -193,4 +193,5 @@ fi
 
 echo "== Compiling ARM64 iOS app and packaging IPA =="
 sh ./build.sh ipa
-echo "IPA ready: $ROOT/build/WMMT3DX-1.0.ipa"\ntrap - EXIT HUP INT TERM
+echo "IPA ready: $ROOT/build/WMMT3DX-1.0.ipa"
+trap - EXIT HUP INT TERM
