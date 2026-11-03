@@ -132,7 +132,7 @@ IPA 使用 `ldid` 伪签名；越狱设备需要安装 AppSync 才能安装。
 ./build_android.sh           # build/WMMT3DX-android.apk（Vulkan）
 VK=0 ./build_android.sh      # OpenGL ES 3 版
 ./build_android.sh install   # 并用 adb 安装
-./build_android.sh data      # 并把 data/ 推到 /sdcard/Android/data/com.wmmt.port/files/wmmt
+./build_android.sh data      # 并把 data/ 推到 /sdcard/data
 ```
 
 默认 SDK 位置是 `~/Library/Android/sdk`，可以用 `ANDROID_HOME`、`JAVA_HOME` 改。apk 用构建时自动生成的本地密钥签名（`build/android/wmmt.keystore`）。着色器的 SPIR-V（`src/vkgl_spv.c`）由 `tools/vkglsl.py` 从 `tools/vkprogs/` 自动生成。
