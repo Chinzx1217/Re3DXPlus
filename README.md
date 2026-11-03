@@ -137,7 +137,7 @@ VK=0 ./build_android.sh      # OpenGL ES 3 版
 
 默认 SDK 位置是 `~/Library/Android/sdk`，可以用 `ANDROID_HOME`、`JAVA_HOME` 改。apk 用构建时自动生成的本地密钥签名（`build/android/wmmt.keystore`）。着色器的 SPIR-V（`src/vkgl_spv.c`）由 `tools/vkglsl.py` 从 `tools/vkprogs/` 自动生成。
 
-138: The existing `build_android.sh` remains the legacy arm64 / Android 9+ build. The separate Android 6 compatibility target is documented in [ANDROID_STUDIO.md](ANDROID_STUDIO.md).
+The existing `build_android.sh` remains the legacy arm64 / Android 9+ build. The separate Android 6 compatibility target is documented in [ANDROID_STUDIO.md](ANDROID_STUDIO.md).
 
 ## Android 6 / 32-bit ARM 兼容构建（实验性）
 
