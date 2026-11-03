@@ -338,8 +338,16 @@ static GLuint white_tex;
 
 #ifdef WMMT_EGL
 PFNGLGENVERTEXARRAYSOESPROC wmmt_glGenVertexArraysOES;
-PFNGLBINDVERTEXARRAYOESPROC wmmt_glBindVertexArrayOES;
+PFNGLBINDVERTEXARRAYSOESPROC wmmt_glBindVertexArrayOES;
 PFNGLDELETEVERTEXARRAYSOESPROC wmmt_glDeleteVertexArraysOES;
+
+/* Some GLES2 devices (including a few Mali-400 drivers) lack OES_vertex_array_object.
+ * A zero VAO keeps bind_batch() on its existing per-draw attribute setup path. */
+static void vao_gen_fallback(GLsizei n, GLuint *arrays) {
+  if (arrays) memset(arrays, 0, (size_t)n * sizeof *arrays);
+}
+static void vao_bind_fallback(GLuint array) { (void)array; }
+static void vao_delete_fallback(GLsizei n, const GLuint *arrays) { (void)n; (void)arrays; }
 #endif
 
 typedef struct {
@@ -509,7 +517,12 @@ int render_init(void) {
   wmmt_glGenVertexArraysOES = (PFNGLGENVERTEXARRAYSOESPROC)eglGetProcAddress("glGenVertexArraysOES");
   wmmt_glBindVertexArrayOES = (PFNGLBINDVERTEXARRAYOESPROC)eglGetProcAddress("glBindVertexArrayOES");
   wmmt_glDeleteVertexArraysOES = (PFNGLDELETEVERTEXARRAYSOESPROC)eglGetProcAddress("glDeleteVertexArraysOES");
-  if (!wmmt_glGenVertexArraysOES || !wmmt_glBindVertexArrayOES || !wmmt_glDeleteVertexArraysOES) return -1;
+  if (!wmmt_glGenVertexArraysOES || !wmmt_glBindVertexArrayOES || !wmmt_glDeleteVertexArraysOES) {
+    fprintf(stderr, "GLES2: OES_vertex_array_object unavailable; using per-draw vertex bindings\\n");
+    wmmt_glGenVertexArraysOES = vao_gen_fallback;
+    wmmt_glBindVertexArrayOES = vao_bind_fallback;
+    wmmt_glDeleteVertexArraysOES = vao_delete_fallback;
+  }
 #endif
   static const uint8_t px[4] = { 255, 255, 255, 255 };
   glGenTextures(1, &white_tex);
