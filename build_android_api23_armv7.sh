@@ -53,3 +53,43 @@ APK="$(find "$ROOT/android/build/outputs/apk" -type f -name '*.apk' -print | hea
   exit 1
 }
 echo "Android 6 / ARMv7 APK: $APK"
+
+# Optional device actions. Game assets stay outside the APK in /sdcard/wmmt/.
+ACTION="${1:-build}"
+if [ "$ACTION" = "install" ] || [ "$ACTION" = "data" ]; then
+  ADB="$SDK/platform-tools/adb"
+  [ -x "$ADB" ] || { echo "adb not found: $ADB" >&2; exit 1; }
+  "$ADB" install -r "$APK"
+fi
+
+if [ "$ACTION" = "data" ]; then
+  ORIG="$ROOT/../Wangan Midnight Maximum Tune 3DX+ (Japan)"
+  [ -d "$ORIG/data/rtmovie/table" ] && [ -d "$ORIG/data/rtmovie/trail" ] || {
+    echo "Original realtime movie data is missing under: $ORIG/data/rtmovie" >&2
+    exit 1
+  }
+  [ -d "$ORIG/data/cutin/jp" ] || {
+    echo "Original story cut-in text is missing: $ORIG/data/cutin/jp" >&2
+    exit 1
+  }
+  [ -f "$ROOT/data/menu.bin" ] || {
+    echo "Generated game data is missing: $ROOT/data/menu.bin. Generate/pack the local data first." >&2
+    exit 1
+  }
+
+  D="/sdcard/wmmt"
+  "$ADB" shell "mkdir -p '$D'"
+  # Copy the generated data folder's contents, not the data/ parent directory.
+  "$ADB" push "$ROOT/data/." "$D/"
+  "$ADB" shell "mkdir -p '$D/rtmovie' '$D/cutin/jp' '$D/carconfig'"
+  "$ADB" push "$ORIG/data/rtmovie/table" "$ORIG/data/rtmovie/trail" "$D/rtmovie/"
+  "$ADB" push "$ORIG/data/cutin/jp/." "$D/cutin/jp/"
+  for f in "$ORIG"/data/carconfig/ytConfig*.txt; do
+    [ -f "$f" ] || continue
+    "$ADB" push "$f" "$D/carconfig/"
+  done
+  echo "Android 6 game data copied separately to $D (not bundled in the APK)."
+elif [ "$ACTION" != "build" ] && [ "$ACTION" != "install" ]; then
+  echo "Usage: sh ./build_android_api23_armv7.sh [build|install|data]" >&2
+  exit 2
+fi
