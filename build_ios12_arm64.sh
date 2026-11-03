@@ -54,7 +54,7 @@ fi
 }
 export IOS_SDK="$SDK"
 export IOS_ARCH=arm64
-export IOS_MIN_VERSION="${IOS_MIN_VERSION:-9.3}"
+export IOS_MIN_VERSION="${IOS_MIN_VERSION:-12.0}"
 export IOS_CLANG="$CLANG"
 
 # The source generators need Python packages. Keep them isolated from macOS system Python.
