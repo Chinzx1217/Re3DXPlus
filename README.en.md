@@ -137,8 +137,9 @@ The ipa is fake-signed with ldid, so it needs a jailbroken device with AppSync. 
 The ARM64 iOS build defaults to a **9.3 minimum deployment target** and is intended to run on iOS 12.5.8 as well. It uses the selected Xcode SDK (or `IOS_SDK=/path/to/iPhoneOS.sdk`); it does not download an SDK. The IPA packager copies the complete generated `data/` tree into the app bundle and fails before packaging if required map, menu, physics, audio, car, or story-movie assets are missing.
 
 ```sh
-sh ./build_ios12_arm64.sh                         # generate assets if needed, then build the IPA
-REBUILD_IOS_ASSETS=1 sh ./build_ios12_arm64.sh  # rebuild data from scratch; old data is backed up
+sh ./build_ios12_arm64.sh data                    # generate local data only
+REBUILD_IOS_ASSETS=1 sh ./build_ios12_arm64.sh data  # regenerate data; preserve the old copy
+sh ./build_ios12_arm64.sh ipa                     # package the complete data tree into the IPA
 ```
 
 A clean data rebuild preserves the previous generated `data/` under `build/data-backup-*`. The original arcade directory beside the repository is not modified.
