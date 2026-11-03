@@ -79,7 +79,7 @@ iOS 的系统代码是 Objective-C，能和 C 一起编译，所以直接放在 
 - Python 3，以及 `pip install capstone unicorn pillow`
 - `c++filt`（binutils）
 - ffmpeg（需带 Bink 解码器，用于影片）
-- iOS：macOS、可用的 `clang`、`ldid`；ARM64 构建脚本会在缺少 SDK 时自动安装打过补丁的 iOS 12.4 SDK 到 `~/theos/sdks/`
+- iOS：macOS、可用的 `clang`、`ldid`；iOS 构建脚本优先使用 `xcode-select` / `DEVELOPER_DIR` 选中的 Xcode SDK，也可通过 `IOS_SDK` 指定；不会自动下载 SDK
 - Android：Android SDK（build-tools、platform）和 NDK，JDK（Android Studio 自带的即可）
 
 ## 第一步：生成代码表和物理
@@ -120,10 +120,10 @@ Android 想用高清贴图时，可以用 Real-ESRGAN 放大地图贴图（`tool
 ## 构建 iOS（iPad mini 2 ARM64）
 
 ```sh
-sh build_ios12_arm64.sh  # 自动安装 iOS 12.4 SDK、生成素材并打包 ARM64 IPA
+sh build_ios12_arm64.sh                         # 使用已有 Xcode SDK，生成素材并打包 ARM64 IPA\nREBUILD_IOS_ASSETS=1 sh build_ios12_arm64.sh  # 重新生成整套 data；旧 data 会先备份到 build/data-backup-*
 ```
 
-此分支以 iPad mini 2（A7 / ARM64）为目标。构建脚本在缺少 SDK 时，会从 theos/sdks 官方发布页安装打过补丁的 `iPhoneOS12.4.sdk` 到 `~/theos/sdks/`。最低系统版本默认为 iOS 9.3，可在 iOS 12.5.8 上运行。原版街机数据必须由用户自行准备，且不会上传到 GitHub。
+此分支以 ARM64 iPad 为目标。最低系统版本默认为 iOS 9.3，可在 iOS 12.5.8 上运行。构建脚本优先使用当前 Xcode 的 iPhoneOS SDK；也可通过 `IOS_SDK=/path/to/iPhoneOS.sdk` 指定，不会自动下载 SDK。IPA 会把完整生成的 `data/` 目录树放进 `.app`，并在打包前检查关键地图、菜单、物理、音频、车辆及 Story Movie 资源；缺少必要文件会直接停止，不再静默生成不完整 IPA。原版街机数据必须由用户自行准备，且不会上传到 GitHub。
 
 IPA 使用 `ldid` 伪签名；越狱设备需要安装 AppSync 才能安装。
 ## 构建 Android（旧版 ARM64 / Android 9+）
