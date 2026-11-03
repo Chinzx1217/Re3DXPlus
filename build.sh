@@ -78,43 +78,53 @@ ldid -S "$APP/WMMT"
 echo "built $(pwd)/$APP"
 
 if [ "$1" = "ipa" ]; then
-  # everything deploy copies to /var/mobile/Media/wmmt, inside the bundle (main.m DataDir finds tokyo.wpk there)
+  # Package the complete generated data tree. Do not silently omit files through optional copies.
+  ORIG="../Wangan Midnight Maximum Tune 3DX+ (Japan)"
+  [ -d "$ORIG/data/rtmovie/table" ] || { echo "Missing original data/rtmovie/table" >&2; exit 1; }
+  [ -d "$ORIG/data/rtmovie/trail" ] || { echo "Missing original data/rtmovie/trail" >&2; exit 1; }
+  [ -d "$ORIG/data/cutin/jp" ] || { echo "Missing original data/cutin/jp" >&2; exit 1; }
+  [ -f data/tokyo.wpk ] || { echo "Missing generated data/tokyo.wpk" >&2; exit 1; }
+  [ -f data/menu.bin ] || { echo "Missing generated data/menu.bin" >&2; exit 1; }
+  [ -f data/phys.img ] || { echo "Missing generated data/phys.img" >&2; exit 1; }
+  [ -f data/hud.bin ] || { echo "Missing generated data/hud.bin" >&2; exit 1; }
+  [ -f data/meters.bin ] || { echo "Missing generated data/meters.bin" >&2; exit 1; }
+  [ -f data/minicourse.wpk ] || { echo "Missing generated data/minicourse.wpk" >&2; exit 1; }
+  [ -d data/traffic ] || { echo "Missing generated data/traffic directory" >&2; exit 1; }
+  set -- data/traffic/*.wpk
+  [ -f "$1" ] || { echo "No traffic WPK files in data/traffic" >&2; exit 1; }
+  set -- data/cars/*.wpk
+  [ -f "$1" ] || { echo "No car WPK files in data/cars" >&2; exit 1; }
+  set -- data/sound/*.wav
+  [ -f "$1" ] || { echo "No sound-effect WAV files in data/sound" >&2; exit 1; }
+  set -- data/sound/engine/*.wav
+  [ -f "$1" ] || { echo "No engine WAV files in data/sound/engine" >&2; exit 1; }
+  set -- data/sound/bgm/*.m4a
+  [ -f "$1" ] || { echo "No BGM AAC files in data/sound/bgm" >&2; exit 1; }
+
   mkdir -p data/carconfig
-  cp "../Wangan Midnight Maximum Tune 3DX+ (Japan)/data/carconfig/"ytConfig*.txt data/carconfig/
-  sh prepare_bgm.sh
-  for f in tokyo.wpk tokyo_night.wpk sky.wpk sky_night.wpk arrows.wpk arrows_night.wpk arrows.names \
-           lights.wpk lights.bin neon.wpk fd3s.wpk hud.bin navi.bin meters.bin phys.img menu.bin minicourse.wpk intro.mp4 playdemo.mp4 tutorial.mp4; do
-    if [ -f data/$f ]; then cp data/$f "$APP/"; fi
-  done
-  # the other cities (tools/stage/pack_city.py, pack_lights.py, navipack.py)
-  for c in oosaka hakone nagoya fukuoka; do
-    for f in data/$c.wpk data/${c}_night.wpk data/sky_$c.wpk data/sky_${c}_night.wpk data/arrows_$c.wpk \
-             data/arrows_${c}_night.wpk data/arrows_$c.names data/lights_$c.bin data/navi_$c.bin; do
-      if [ -f $f ]; then cp $f "$APP/"; fi
-    done
-  done
-  mkdir -p "$APP/traffic" "$APP/carconfig" "$APP/cars" "$APP/sound/bgm" "$APP/sound/engine"
-  cp data/traffic/*.wpk "$APP/traffic/"
-  cp data/carconfig/*.txt "$APP/carconfig/"
-  mkdir -p "$APP/rtmovie"
-  cp -R "../Wangan Midnight Maximum Tune 3DX+ (Japan)/data/rtmovie/table" "../Wangan Midnight Maximum Tune 3DX+ (Japan)/data/rtmovie/trail" "$APP/rtmovie/"
-  # the story's in-race lines (Cut::clCutIn: data/cutin/jp)
-  mkdir -p "$APP/cutin/jp"
-  cp "../Wangan Midnight Maximum Tune 3DX+ (Japan)/data/cutin/jp/"*.txt "$APP/cutin/jp/"
-  cp data/cars/* "$APP/cars/"
-  # (and their baked ambient occlusion, tools/stage/bake_ao.c, as the car models' in data/cars)
-  if [ -d data/chara ]; then mkdir -p "$APP/chara" && cp data/chara/*.wpk "$APP/chara/" && { cp data/chara/*.ao "$APP/chara/" 2>/dev/null || true; }; fi
-  # the dress-up wheels and their GET screen models (pack_cars.py --wheels)
-  if [ -d data/wheels ]; then mkdir -p "$APP/wheels" && cp data/wheels/*.wpk "$APP/wheels/"; fi
-  # the stickers by car (tools/stage/pack_vinyl.py)
-  if [ -d data/vinyl ]; then mkdir -p "$APP/vinyl" && cp data/vinyl/*.vpk "$APP/vinyl/"; fi
-  cp data/sound/bgm/*.m4a "$APP/sound/bgm/"
-  cp data/sound/*.wav "$APP/sound/"
-  cp data/sound/engine/*.wav "$APP/sound/engine/"
+  set -- "$ORIG/data/carconfig/"ytConfig*.txt
+  [ -f "$1" ] || { echo "No ytConfig*.txt files in original data/carconfig" >&2; exit 1; }
+  cp "$@" data/carconfig/
+  set -- "$ORIG/data/cutin/jp/"*.txt
+  [ -f "$1" ] || { echo "No story cut-in text files in original data/cutin/jp" >&2; exit 1; }
+
+  # Copy every generated data file and subdirectory into the app bundle root.
+  # DataDir() detects tokyo.wpk in this root; SaveDir() then uses Documents.
+  cp -R data/. "$APP/"
+  mkdir -p "$APP/rtmovie" "$APP/cutin/jp"
+  cp -R "$ORIG/data/rtmovie/table" "$ORIG/data/rtmovie/trail" "$APP/rtmovie/"
+  cp "$@" "$APP/cutin/jp/"
+
   ver=$(plutil -extract CFBundleShortVersionString raw "$APP/Info.plist")${PHONE:+-iPhone4}
   rm -rf build/ipa && mkdir -p build/ipa/Payload && cp -R "$APP" build/ipa/Payload/
   (cd build/ipa && rm -f "../WMMT3DX-$ver.ipa" && zip -qry -1 "../WMMT3DX-$ver.ipa" Payload)
-  rm -rf build/ipa
+  unzip -t "build/WMMT3DX-$ver.ipa" >/dev/null
+  unzip -l "build/WMMT3DX-$ver.ipa" | grep -q 'Payload/WMMT.app/tokyo.wpk' || {
+    echo "IPA verification failed: tokyo.wpk is not inside the app bundle" >&2; exit 1;
+  }
+  unzip -l "build/WMMT3DX-$ver.ipa" | grep -q 'Payload/WMMT.app/menu.bin' || {
+    echo "IPA verification failed: menu.bin is not inside the app bundle" >&2; exit 1;
+  }
   echo "packed $(pwd)/build/WMMT3DX-$ver.ipa ($(du -h "build/WMMT3DX-$ver.ipa" | cut -f1))"
 fi
 
