@@ -125,8 +125,9 @@ Android 想用高清贴图时，可以用 Real-ESRGAN 放大地图贴图（`tool
 ## 构建 iOS（iPad mini 2 ARM64）
 
 ```sh
-sh build_ios12_arm64.sh                         # 使用已有 Xcode SDK，生成素材并打包 ARM64 IPA
-REBUILD_IOS_ASSETS=1 sh build_ios12_arm64.sh  # 重新生成整套 data；旧 data 会先备份到 build/data-backup-*
+sh build_ios12_arm64.sh data                    # 只生成本地 data，不编译 IPA
+REBUILD_IOS_ASSETS=1 sh build_ios12_arm64.sh data  # 从头生成 data；旧 data 会备份
+sh build_ios12_arm64.sh ipa                     # 把完整 data 打包进 ARM64 IPA
 ```
 
 此分支以 ARM64 iPad 为目标。最低系统版本默认为 iOS 9.3，可在 iOS 12.5.8 上运行。构建脚本优先使用当前 Xcode 的 iPhoneOS SDK；也可通过 `IOS_SDK=/path/to/iPhoneOS.sdk` 指定，不会自动下载 SDK。IPA 会把完整生成的 `data/` 目录树放进 `.app`，并在打包前检查关键地图、菜单、物理、音频、车辆及 Story Movie 资源；缺少必要文件会直接停止，不再静默生成不完整 IPA。原版街机数据必须由用户自行准备，且不会上传到 GitHub。
