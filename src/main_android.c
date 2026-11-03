@@ -81,9 +81,32 @@ static short sl_audio_buffers[2][AUDIO_FRAMES * 2];
 static unsigned sl_audio_next;
 
 static void audio_queue_cb(SLAndroidSimpleBufferQueueItf queue, void *context) {
+  static int enqueue_error_reported;
   unsigned i = sl_audio_next++ & 1u;
   snd_mix(sl_audio_buffers[i], AUDIO_FRAMES);
-  (*queue)->Enqueue(queue, sl_audio_buffers[i], sizeof sl_audio_buffers[i]);
+  SLresult r = (*queue)->Enqueue(queue, sl_audio_buffers[i], sizeof sl_audio_buffers[i]);
+  if (r != SL_RESULT_SUCCESS && !enqueue_error_reported) {
+    enqueue_error_reported = 1;
+    fprintf(stderr, "OpenSL ES: callback Enqueue failed (0x%x)\n", (unsigned)r);
+  }
+}
+
+static void audio_release(void) {
+  if (sl_player_object) {
+    (*sl_player_object)->Destroy(sl_player_object);
+    sl_player_object = NULL;
+  }
+  if (sl_output_mix_object) {
+    (*sl_output_mix_object)->Destroy(sl_output_mix_object);
+    sl_output_mix_object = NULL;
+  }
+  if (sl_engine_object) {
+    (*sl_engine_object)->Destroy(sl_engine_object);
+    sl_engine_object = NULL;
+  }
+  sl_engine = NULL;
+  sl_play = NULL;
+  sl_queue = NULL;
 }
 
 static void audio_open(void) {
@@ -102,29 +125,40 @@ static void audio_open(void) {
   SLDataLocator_OutputMix output_locator = { SL_DATALOCATOR_OUTPUTMIX, sl_output_mix_object };
   SLDataSink sink = { &output_locator, NULL };
 
-  if (sl_player_object) return;
-  if (slCreateEngine(&sl_engine_object, 0, NULL, 0, NULL, NULL) != SL_RESULT_SUCCESS) return;
-  if ((*sl_engine_object)->Realize(sl_engine_object, SL_BOOLEAN_FALSE) != SL_RESULT_SUCCESS) return;
-  if ((*sl_engine_object)->GetInterface(sl_engine_object, SL_IID_ENGINE, &sl_engine) != SL_RESULT_SUCCESS) return;
-  if ((*sl_engine)->CreateOutputMix(sl_engine, &sl_output_mix_object, 0, NULL, NULL) != SL_RESULT_SUCCESS) return;
-  if ((*sl_output_mix_object)->Realize(sl_output_mix_object, SL_BOOLEAN_FALSE) != SL_RESULT_SUCCESS) return;
-  r = (*sl_engine)->CreateAudioPlayer(sl_engine, &sl_player_object, &source, &sink,
-                                      1, queue_ids, queue_required);
-  if (r != SL_RESULT_SUCCESS) { sl_player_object = NULL; return; }
-  if ((*sl_player_object)->Realize(sl_player_object, SL_BOOLEAN_FALSE) != SL_RESULT_SUCCESS) return;
-  if ((*sl_player_object)->GetInterface(sl_player_object, SL_IID_PLAY, &sl_play) != SL_RESULT_SUCCESS) return;
-  if ((*sl_player_object)->GetInterface(sl_player_object, SL_IID_ANDROIDSIMPLEBUFFERQUEUE, &sl_queue) != SL_RESULT_SUCCESS) return;
-  if ((*sl_queue)->RegisterCallback(sl_queue, audio_queue_cb, NULL) != SL_RESULT_SUCCESS) return;
+#define AUDIO_TRY(stage, expression) do { \
+    r = (expression); \
+    if (r != SL_RESULT_SUCCESS) { \
+      fprintf(stderr, "OpenSL ES: %s failed (0x%x)\n", stage, (unsigned)r); \
+      goto fail; \
+    } \
+  } while (0)
+
+  if (sl_play) return;
+  AUDIO_TRY("slCreateEngine", slCreateEngine(&sl_engine_object, 0, NULL, 0, NULL, NULL));
+  AUDIO_TRY("engine Realize", (*sl_engine_object)->Realize(sl_engine_object, SL_BOOLEAN_FALSE));
+  AUDIO_TRY("engine GetInterface", (*sl_engine_object)->GetInterface(sl_engine_object, SL_IID_ENGINE, &sl_engine));
+  AUDIO_TRY("CreateOutputMix", (*sl_engine)->CreateOutputMix(sl_engine, &sl_output_mix_object, 0, NULL, NULL));
+  AUDIO_TRY("output mix Realize", (*sl_output_mix_object)->Realize(sl_output_mix_object, SL_BOOLEAN_FALSE));
+  AUDIO_TRY("CreateAudioPlayer", (*sl_engine)->CreateAudioPlayer(sl_engine, &sl_player_object, &source, &sink,
+                                                                  1, queue_ids, queue_required));
+  AUDIO_TRY("player Realize", (*sl_player_object)->Realize(sl_player_object, SL_BOOLEAN_FALSE));
+  AUDIO_TRY("player GetPlayInterface", (*sl_player_object)->GetInterface(sl_player_object, SL_IID_PLAY, &sl_play));
+  AUDIO_TRY("player GetBufferQueue", (*sl_player_object)->GetInterface(sl_player_object, SL_IID_ANDROIDSIMPLEBUFFERQUEUE, &sl_queue));
+  AUDIO_TRY("RegisterCallback", (*sl_queue)->RegisterCallback(sl_queue, audio_queue_cb, NULL));
+
   sl_audio_next = 0;
   for (int i = 0; i < 2; ++i) {
     snd_mix(sl_audio_buffers[i], AUDIO_FRAMES);
-    if ((*sl_queue)->Enqueue(sl_queue, sl_audio_buffers[i], sizeof sl_audio_buffers[i]) != SL_RESULT_SUCCESS) return;
+    AUDIO_TRY("initial Enqueue", (*sl_queue)->Enqueue(sl_queue, sl_audio_buffers[i], sizeof sl_audio_buffers[i]));
   }
-  (*sl_play)->SetPlayState(sl_play, SL_PLAYSTATE_PLAYING);
-}
+  AUDIO_TRY("SetPlayState", (*sl_play)->SetPlayState(sl_play, SL_PLAYSTATE_PLAYING));
+  fprintf(stderr, "OpenSL ES: 44.1 kHz stereo output started\n");
+#undef AUDIO_TRY
+  return;
 
-static void audio_pause(int paused) {
-  if (sl_play) (*sl_play)->SetPlayState(sl_play, paused ? SL_PLAYSTATE_PAUSED : SL_PLAYSTATE_PLAYING);
+fail:
+#undef AUDIO_TRY
+  audio_release();
 }
 
 /* ---- calls up to MainActivity (the game thread is attached to the VM) ---- */
