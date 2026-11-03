@@ -4,7 +4,7 @@
 #   ./build_android.sh            the apk
 #   ./build_android.sh install    and adb install it (the phone on USB with USB debugging on)
 #   ./build_android.sh data       and push the game data to /sdcard/wmmt (once; big).
-#                                 MainActivity searches the shared-storage root's data/ folder.
+#                                 MainActivity prefers the shared-storage root's wmmt/ folder (legacy data/ is also accepted).
 set -e
 cd "$(dirname "$0")"
 SDK="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
