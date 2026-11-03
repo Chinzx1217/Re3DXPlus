@@ -185,18 +185,51 @@ if [ ! -f build/.ios_assets_ready ]; then
   python3 tools/make_icon.py
 
   touch build/.ios_assets_ready
-  # Generation is complete: keep the new data even if a later compile/package step fails.
-  DATA_BACKUP=""
 else
   echo "Using previously generated local assets in data/."
 fi
 
 if [ "$MODE" = "data" ]; then
+  # Validate the generated tree before reporting success or keeping a clean rebuild.
+  for f in tokyo.wpk tokyo_night.wpk sky.wpk sky_night.wpk arrows.wpk arrows.names \
+           arrows_night.wpk lights.wpk lights.bin neon.wpk fd3s.wpk hud.bin navi.bin \
+           meters.bin phys.img menu.bin minicourse.wpk intro.mp4 playdemo.mp4 tutorial.mp4; do
+    if [ ! -s "data/$f" ]; then
+      echo "Generated data is incomplete: data/$f is missing or empty." >&2
+      exit 1
+    fi
+  done
+  for c in oosaka hakone nagoya fukuoka; do
+    for f in "$c.wpk" "${c}_night.wpk" "sky_$c.wpk" "sky_${c}_night.wpk" \
+             "arrows_$c.wpk" "arrows_${c}_night.wpk" "arrows_$c.names" \
+             "lights_$c.bin" "navi_$c.bin"; do
+      if [ ! -s "data/$f" ]; then
+        echo "Generated data is incomplete: data/$f is missing or empty." >&2
+        exit 1
+      fi
+    done
+  done
+  for d in data/traffic data/cars data/chara data/wheels data/vinyl data/sound/bgm data/sound/engine; do
+    if [ ! -d "$d" ] || ! find "$d" -type f -print -quit | grep -q .; then
+      echo "Generated data is incomplete: $d is missing or empty." >&2
+      exit 1
+    fi
+  done
+  for f in data/sound/rank.wav data/sound/engine/rx714.wav data/icon/Icon-72.png data/icon/Icon-76@2x.png; do
+    if [ ! -s "$f" ]; then
+      echo "Generated data is incomplete: $f is missing or empty." >&2
+      exit 1
+    fi
+  done
+  # Generation and validation succeeded: keep the new data if a later build fails.
+  DATA_BACKUP=""
   echo "Generated data directory: $ROOT/data"
   echo "Next Android step: sh ./build_android_api23_armv7.sh data"
   exit 0
 fi
 
+# Generation succeeded; retain the new data if compilation or IPA packaging fails.
+DATA_BACKUP=""
 echo "== Compiling ARM64 iOS app and packaging IPA =="
 sh ./build.sh ipa
 echo "IPA ready: $ROOT/build/WMMT3DX-1.0.ipa"
