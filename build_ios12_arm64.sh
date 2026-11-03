@@ -23,41 +23,6 @@ ORIG="$(cd "$ORIG" 2>/dev/null && pwd)" || {
 }
 [ -d "$ORIG/data/cutin/jp" ] || { echo "Original data is missing data/cutin/jp." >&2; exit 1; }
 
-CLANG="${IOS_CLANG:-}"
-SDK="${IOS_SDK:-}"
-THEOS_ROOT="${THEOS:-$HOME/theos}"
-
-# Prefer the manually installed Xcode selected by xcode-select or DEVELOPER_DIR.
-# xcrun returns SDK/tool paths with spaces intact; keep every path quoted.
-if command -v xcrun >/dev/null 2>&1; then
-  if [ -z "$SDK" ]; then
-    XCODE_SDK="$(xcrun --sdk iphoneos --show-sdk-path 2>/dev/null || true)"
-    if [ -n "$XCODE_SDK" ] && [ -d "$XCODE_SDK" ]; then SDK="$XCODE_SDK"; fi
-  fi
-  if [ -z "$CLANG" ]; then
-    XCODE_CLANG="$(xcrun --sdk iphoneos --find clang 2>/dev/null || true)"
-    if [ -n "$XCODE_CLANG" ] && [ -x "$XCODE_CLANG" ]; then CLANG="$XCODE_CLANG"; fi
-  fi
-fi
-
-# Keep the previously supported Theos SDKs as an explicit fallback.
-if [ -z "$SDK" ]; then
-  for candidate in \
-    "$THEOS_ROOT/sdks/iPhoneOS12.4.sdk" \
-    "$THEOS_ROOT/sdks/iPhoneOS9.3.sdk" \
-    "$THEOS_ROOT/sdks/iPhoneOS.sdk"; do
-    if [ -d "$candidate" ]; then SDK="$candidate"; break; fi
-  done
-fi
-[ -n "$SDK" ] || {
-  echo "iPhoneOS SDK not found. Install Xcode manually and select it with xcode-select/DEVELOPER_DIR, or set IOS_SDK. Automatic SDK downloads are disabled." >&2
-  exit 1
-}
-CLANG="${CLANG:-clang}"
-command -v "$CLANG" >/dev/null 2>&1 || { echo "clang not found: $CLANG" >&2; exit 1; }
-command -v ldid >/dev/null 2>&1 || {
-  echo "ldid is required for the jailbroken-device IPA. Install it (for example: brew install ldid)." >&2; exit 1;
-}
 command -v ffmpeg >/dev/null 2>&1 || {
   echo "ffmpeg is required for the arcade Bink movies. Install it (for example: brew install ffmpeg)." >&2; exit 1;
 }
@@ -65,17 +30,56 @@ command -v afconvert >/dev/null 2>&1 || { echo "afconvert is missing; this scrip
 ffmpeg -hide_banner -decoders 2>/dev/null | grep -qi bink || {
   echo "Your ffmpeg build has no Bink decoder. Install a full Homebrew ffmpeg build." >&2; exit 1;
 }
-[ -d "$SDK" ] || {
-  echo "iOS SDK not found: $SDK" >&2
-  exit 1;
-}
-[ -f "$SDK/System/Library/Frameworks/UIKit.framework/Headers/UIKit.h" ] || {
-  echo "The SDK does not contain UIKit headers: $SDK" >&2; exit 1;
-}
-export IOS_SDK="$SDK"
-export IOS_ARCH=arm64
-export IOS_MIN_VERSION="${IOS_MIN_VERSION:-9.3}"
-export IOS_CLANG="$CLANG"
+
+# Data-only mode does not need Xcode, an iPhoneOS SDK, or ldid.
+if [ "$MODE" = "ipa" ]; then
+  CLANG="${IOS_CLANG:-}"
+  SDK="${IOS_SDK:-}"
+  THEOS_ROOT="${THEOS:-$HOME/theos}"
+
+  # Prefer the manually installed Xcode selected by xcode-select or DEVELOPER_DIR.
+  # xcrun returns SDK/tool paths with spaces intact; keep every path quoted.
+  if command -v xcrun >/dev/null 2>&1; then
+    if [ -z "$SDK" ]; then
+      XCODE_SDK="$(xcrun --sdk iphoneos --show-sdk-path 2>/dev/null || true)"
+      if [ -n "$XCODE_SDK" ] && [ -d "$XCODE_SDK" ]; then SDK="$XCODE_SDK"; fi
+    fi
+    if [ -z "$CLANG" ]; then
+      XCODE_CLANG="$(xcrun --sdk iphoneos --find clang 2>/dev/null || true)"
+      if [ -n "$XCODE_CLANG" ] && [ -x "$XCODE_CLANG" ]; then CLANG="$XCODE_CLANG"; fi
+    fi
+  fi
+
+  # Keep the previously supported Theos SDKs as an explicit fallback.
+  if [ -z "$SDK" ]; then
+    for candidate in \
+      "$THEOS_ROOT/sdks/iPhoneOS12.4.sdk" \
+      "$THEOS_ROOT/sdks/iPhoneOS9.3.sdk" \
+      "$THEOS_ROOT/sdks/iPhoneOS.sdk"; do
+      if [ -d "$candidate" ]; then SDK="$candidate"; break; fi
+    done
+  fi
+  [ -n "$SDK" ] || {
+    echo "iPhoneOS SDK not found. Install Xcode manually and select it with xcode-select/DEVELOPER_DIR, or set IOS_SDK. Automatic SDK downloads are disabled." >&2
+    exit 1
+  }
+  CLANG="${CLANG:-clang}"
+  command -v "$CLANG" >/dev/null 2>&1 || { echo "clang not found: $CLANG" >&2; exit 1; }
+  command -v ldid >/dev/null 2>&1 || {
+    echo "ldid is required for the jailbroken-device IPA. Install it (for example: brew install ldid)." >&2; exit 1;
+  }
+  [ -d "$SDK" ] || {
+    echo "iOS SDK not found: $SDK" >&2
+    exit 1;
+  }
+  [ -f "$SDK/System/Library/Frameworks/UIKit.framework/Headers/UIKit.h" ] || {
+    echo "The SDK does not contain UIKit headers: $SDK" >&2; exit 1;
+  }
+  export IOS_SDK="$SDK"
+  export IOS_ARCH=arm64
+  export IOS_MIN_VERSION="${IOS_MIN_VERSION:-9.3}"
+  export IOS_CLANG="$CLANG"
+fi
 
 # The source generators need Python packages. Keep them isolated from macOS system Python.
 PYTHON="${PYTHON:-python3}"
