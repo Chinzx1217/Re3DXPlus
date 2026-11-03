@@ -3,7 +3,7 @@
 # VK=0 for OpenGL ES 3) + AAudio) with the SDK's build-tools and the NDK, no Gradle. Usage:
 #   ./build_android.sh            the apk
 #   ./build_android.sh install    and adb install it (the phone on USB with USB debugging on)
-#   ./build_android.sh data       and push the game data to /sdcard/data (once; big).
+#   ./build_android.sh data       and push the game data to /sdcard/wmmt (once; big).
 #                                 MainActivity searches the shared-storage root's data/ folder.
 set -e
 cd "$(dirname "$0")"
@@ -75,8 +75,8 @@ if [ "$1" = "install" ] || [ "$1" = "data" ]; then
   "$ADB" install -r build/WMMT3DX-android.apk
 fi
 if [ "$1" = "data" ]; then
-  # MainActivity.findGameData() searches the shared-storage root's data/ folder.
-  D=/sdcard/data
+  # MainActivity.findGameData() prefers the shared-storage root's wmmt/ folder.
+  D=/sdcard/wmmt
   "$ADB" shell mkdir -p $D
   for f in data/*.wpk data/*.wcl data/*.bin data/*.names data/*.img data/*.mp4; do
     if [ -f "$f" ]; then "$ADB" push "$f" $D/; fi
@@ -88,5 +88,5 @@ if [ "$1" = "data" ]; then
   done
   "$ADB" shell mkdir -p $D/rtmovie
   "$ADB" push "../Wangan Midnight Maximum Tune 3DX+ (Japan)/data/rtmovie/table" "../Wangan Midnight Maximum Tune 3DX+ (Japan)/data/rtmovie/trail" $D/rtmovie/
-  echo "data pushed to $D"
+  echo "game data pushed to $D (external folder; not bundled in the APK)"
 fi
