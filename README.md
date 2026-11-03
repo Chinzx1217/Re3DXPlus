@@ -1,5 +1,8 @@
 <p align="center"><img src="docs/logo.png" alt="Re3DX+" width="480"></p>
 
+Mac 构建指南（Android 6 ARMv7 / iPad iOS 9.3+）：[BUILD_MAC.md](BUILD_MAC.md)
+
+
 <p align="center">
   <a href="README.md"><img src="https://img.shields.io/badge/%E8%AF%AD%E8%A8%80-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-brightgreen?style=for-the-badge" alt="简体中文"></a>
   <a href="README.en.md"><img src="https://img.shields.io/badge/Language-English-lightgrey?style=for-the-badge" alt="English"></a>
