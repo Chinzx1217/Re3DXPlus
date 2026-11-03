@@ -3,8 +3,8 @@
 # VK=0 for OpenGL ES 3) + AAudio) with the SDK's build-tools and the NDK, no Gradle. Usage:
 #   ./build_android.sh            the apk
 #   ./build_android.sh install    and adb install it (the phone on USB with USB debugging on)
-#   ./build_android.sh data       and push the game data (as build.sh deploy's) to the phone:
-#                                 /sdcard/Android/data/com.wmmt.port/files/wmmt (once; big)
+#   ./build_android.sh data       and push the game data to /sdcard/data (once; big).
+#                                 MainActivity searches the shared-storage root's data/ folder.
 set -e
 cd "$(dirname "$0")"
 SDK="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
@@ -75,8 +75,8 @@ if [ "$1" = "install" ] || [ "$1" = "data" ]; then
   "$ADB" install -r build/WMMT3DX-android.apk
 fi
 if [ "$1" = "data" ]; then
-  # the game data as the iPad has it (build.sh deploy's list), in the app's own folder
-  D=/sdcard/Android/data/com.wmmt.port/files/wmmt
+  # MainActivity.findGameData() searches the shared-storage root's data/ folder.
+  D=/sdcard/data
   "$ADB" shell mkdir -p $D
   for f in data/*.wpk data/*.wcl data/*.bin data/*.names data/*.img data/*.mp4; do
     if [ -f "$f" ]; then "$ADB" push "$f" $D/; fi
