@@ -68,7 +68,8 @@ static NSString *const MOVIES[3] = { @"intro.mp4", @"playdemo.mp4", @"tutorial.m
 }
 
 - (void)ended:(NSNotification *)n {
-  [target performSelector:done];
+  /* The player may finish after its owning view has begun shutting down. */
+  if (target && done && [target respondsToSelector:done]) [target performSelector:done];
 }
 
 - (void)pause:(BOOL)p {
