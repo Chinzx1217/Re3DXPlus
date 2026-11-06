@@ -7,6 +7,8 @@ import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.media.MediaPlayer;
 import android.os.Bundle;
+import android.os.storage.StorageManager;
+import android.os.storage.StorageVolume;
 import android.view.MotionEvent;
 import android.view.Surface;
 import android.view.SurfaceHolder;
@@ -17,6 +19,11 @@ import android.widget.FrameLayout;
 import android.widget.VideoView;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Locale;
 
 /* The Android side of the port, as main.m is the iOS one: the game draws on a SurfaceView
  * from its own thread (src/main_android.c), the attract movies play in a VideoView over it,
@@ -55,15 +62,92 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Se
     root.addView(game);
     setContentView(root);
     hideBars();
-    /* the data as adb pushes it: /sdcard/Android/data/com.wmmt.port/files/wmmt (needs no
-     * storage permission); the player's files next to it */
-    File ext = getExternalFilesDir(null);
-    File data = new File(ext, "wmmt");
-    data.mkdirs();
-    dataDir = data.getAbsolutePath();
+    /* Prefer complete game data on internal storage, then an SD card, then a USB drive.
+     * Each candidate is an app-specific external-files directory, so native code can use
+     * ordinary POSIX paths without a Storage Access Framework content URI. */
+    File[] storageDirs = getExternalFilesDirs(null);
+    File internalFiles = storageDirs != null && storageDirs.length > 0 && storageDirs[0] != null
+        ? storageDirs[0] : getExternalFilesDir(null);
+    File saveData = new File(internalFiles, "wmmt");
+    saveData.mkdirs();
+    dataDir = findGameDataDir(storageDirs, internalFiles);
     sensors = (SensorManager) getSystemService(SENSOR_SERVICE);
     gravity = sensors.getDefaultSensor(Sensor.TYPE_GRAVITY);
-    nativeStart(this, dataDir, dataDir);
+    nativeStart(this, dataDir, saveData.getAbsolutePath());
+  }
+
+  private static final class DataLocation {
+    final File directory;
+    final int priority;
+
+    DataLocation(File directory, int priority) {
+      this.directory = directory;
+      this.priority = priority;
+    }
+  }
+
+  /* A data set is usable only when its main Tokyo course, starting car, menu and
+   * the cars/sound resource folders are present. A folder by itself is not enough. */
+  private boolean hasGameData(File directory) {
+    return new File(directory, "tokyo.wpk").isFile()
+        && new File(directory, "fd3s.wpk").isFile()
+        && new File(directory, "menu.bin").isFile()
+        && new File(directory, "cars").isDirectory()
+        && new File(directory, "sound").isDirectory();
+  }
+
+  /* getExternalFilesDirs() lists the primary volume first and removable volumes after it.
+   * On Android versions that expose volume UUIDs, use the system description to put SD
+   * cards before USB drives. Unknown removable volumes are checked after both. */
+  private int removableStoragePriority(File appFilesDir) {
+    File volumeRoot = appFilesDir;
+    for (int i = 0; i < 4 && volumeRoot != null; ++i) volumeRoot = volumeRoot.getParentFile();
+    if (volumeRoot == null) return 3;
+
+    StorageManager manager = (StorageManager) getSystemService(STORAGE_SERVICE);
+    if (manager == null) return 3;
+    for (StorageVolume volume : manager.getStorageVolumes()) {
+      String uuid = volume.getUuid();
+      if (uuid == null || !volumeRoot.getName().equalsIgnoreCase(uuid)) continue;
+      String description = volume.getDescription(this).toLowerCase(Locale.US);
+      if (description.contains("usb")) return 2;
+      if (description.contains("sd") || description.contains("card")) return 1;
+      return volume.isRemovable() ? 3 : 0;
+    }
+    return 3;
+  }
+
+  private String findGameDataDir(File[] storageDirs, File internalFiles) {
+    List<DataLocation> candidates = new ArrayList<>();
+    if (storageDirs != null) {
+      for (int i = 0; i < storageDirs.length; ++i) {
+        File files = storageDirs[i];
+        if (files == null) continue;
+        int priority = i == 0 ? 0 : removableStoragePriority(files);
+        candidates.add(new DataLocation(new File(files, "wmmt"), priority));
+      }
+    }
+    if (candidates.isEmpty() && internalFiles != null)
+      candidates.add(new DataLocation(new File(internalFiles, "wmmt"), 0));
+
+    Collections.sort(candidates, new Comparator<DataLocation>() {
+      @Override public int compare(DataLocation a, DataLocation b) {
+        return Integer.compare(a.priority, b.priority);
+      }
+    });
+
+    for (DataLocation candidate : candidates) {
+      if (hasGameData(candidate.directory)) {
+        android.util.Log.i("WMMT3DX", "Game data selected: " + candidate.directory.getAbsolutePath());
+        return candidate.directory.getAbsolutePath();
+      }
+    }
+
+    /* Keep the existing internal path as the failure fallback, so the native loader can
+     * report its normal missing-resource error when no complete copy is available. */
+    File fallback = new File(internalFiles, "wmmt");
+    android.util.Log.w("WMMT3DX", "No complete game data set found; using " + fallback.getAbsolutePath());
+    return fallback.getAbsolutePath();
   }
 
   private void hideBars() {
