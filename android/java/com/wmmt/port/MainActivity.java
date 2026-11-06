@@ -86,14 +86,24 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Se
     }
   }
 
+  private boolean hasEntries(File directory) {
+    File[] entries = directory.listFiles();
+    return entries != null && entries.length > 0;
+  }
+
   /* A data set is usable only when its main Tokyo course, starting car, menu and
-   * the cars/sound resource folders are present. A folder by itself is not enough. */
+   * non-empty cars/sound resource folders are present. A folder by itself is not enough. */
   private boolean hasGameData(File directory) {
-    return new File(directory, "tokyo.wpk").isFile()
-        && new File(directory, "fd3s.wpk").isFile()
-        && new File(directory, "menu.bin").isFile()
-        && new File(directory, "cars").isDirectory()
-        && new File(directory, "sound").isDirectory();
+    File tokyo = new File(directory, "tokyo.wpk");
+    File fd3s = new File(directory, "fd3s.wpk");
+    File menu = new File(directory, "menu.bin");
+    File cars = new File(directory, "cars");
+    File sound = new File(directory, "sound");
+    return tokyo.isFile() && tokyo.length() > 0
+        && fd3s.isFile() && fd3s.length() > 0
+        && menu.isFile() && menu.length() > 0
+        && cars.isDirectory() && hasEntries(cars)
+        && sound.isDirectory() && hasEntries(sound);
   }
 
   /* getExternalFilesDirs() lists the primary volume first and removable volumes after it.
